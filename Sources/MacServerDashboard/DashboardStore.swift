@@ -13,6 +13,7 @@ final class DashboardStore: ObservableObject {
     @Published private(set) var launchAgentInstalled = LaunchAgentManager.isInstalled
     @Published private(set) var localServiceRuntimeMessages: [String: String] = [:]
     @Published var activeAlert: DashboardAlert?
+    @Published var updatePrompt: UpdatePrompt?
 
     private var refreshTimer: Timer?
     private var refreshTimerInterval: TimeInterval?
@@ -28,6 +29,9 @@ final class DashboardStore: ObservableObject {
     private var stoppingServiceIDs = Set<String>()
     private var lastAlertSignature: String?
     private var configLoadFailureReason: String?
+    private var availableUpdate: AvailableUpdate?
+    private var isCheckingForUpdates = false
+    private var isInstallingUpdate = false
 
     static var supportDirectory: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -91,6 +95,70 @@ final class DashboardStore: ObservableObject {
     func openConfigFile() {
         ensureConfigExists()
         NSWorkspace.shared.open(Self.configURL)
+    }
+
+    func checkForUpdates() {
+        guard !isCheckingForUpdates, !isInstallingUpdate else {
+            return
+        }
+
+        isCheckingForUpdates = true
+        message = "正在检查更新"
+        Task {
+            do {
+                let update = try await UpdateManager.checkForUpdate()
+                isCheckingForUpdates = false
+
+                guard let update else {
+                    message = "已是最新版本"
+                    showError(title: "已是最新版本", message: "当前版本 \(AppVersion.current) 已是最新版本。")
+                    return
+                }
+
+                availableUpdate = update
+                message = "发现新版本 \(update.tagName)"
+                updatePrompt = UpdatePrompt(
+                    tagName: update.tagName,
+                    version: update.version,
+                    archiveName: update.archiveName
+                )
+            } catch {
+                isCheckingForUpdates = false
+                message = "检查更新失败"
+                showError(title: "检查更新失败", message: error.localizedDescription)
+            }
+        }
+    }
+
+    func installAvailableUpdate() {
+        guard !isInstallingUpdate, let update = availableUpdate else {
+            return
+        }
+
+        isInstallingUpdate = true
+        message = "正在安装 \(update.tagName)"
+        Task {
+            do {
+                let installedURL = try await UpdateManager.install(update)
+                isInstallingUpdate = false
+                availableUpdate = nil
+                message = "已安装 \(update.tagName)，正在重启"
+                do {
+                    try UpdateManager.relaunch(from: installedURL)
+                    NSApplication.shared.terminate(nil)
+                } catch {
+                    message = "已安装 \(update.tagName)"
+                    showError(
+                        title: "更新已安装",
+                        message: "已安装 \(update.tagName)，但自动重启失败：\(error.localizedDescription)\n\n请手动重新打开：\(installedURL.path)"
+                    )
+                }
+            } catch {
+                isInstallingUpdate = false
+                message = "安装更新失败"
+                showError(title: "安装更新失败", message: error.localizedDescription)
+            }
+        }
     }
 
     func revealLogs() {

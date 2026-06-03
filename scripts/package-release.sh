@@ -16,6 +16,17 @@ ARCHIVE="$DIST_DIR/$APP_NAME-$VERSION-macos-$ARCH.tar.gz"
 CHECKSUMS="$DIST_DIR/$APP_NAME-$VERSION-checksums.txt"
 
 cd "$ROOT_DIR"
+SOURCE_VERSION="$(sed -nE 's/.*static let current = "([^"]+)".*/\1/p' Sources/MacServerDashboard/AppVersion.swift)"
+if [[ -z "$SOURCE_VERSION" ]]; then
+  echo "Could not read AppVersion.current." >&2
+  exit 1
+fi
+
+if [[ "$VERSION" != "v$SOURCE_VERSION" ]]; then
+  echo "Release version $VERSION does not match AppVersion.current ($SOURCE_VERSION)." >&2
+  exit 1
+fi
+
 export CLANG_MODULE_CACHE_PATH="${CLANG_MODULE_CACHE_PATH:-"$ROOT_DIR/.build/clang-module-cache"}"
 mkdir -p "$CLANG_MODULE_CACHE_PATH"
 swift build -c release

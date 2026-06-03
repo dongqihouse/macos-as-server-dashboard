@@ -38,6 +38,16 @@ struct ContentView: View {
                 dismissButton: .default(Text("知道了"))
             )
         }
+        .alert(item: $store.updatePrompt) { prompt in
+            Alert(
+                title: Text("发现新版本 \(prompt.tagName)"),
+                message: Text("当前版本 \(AppVersion.current)，可安装 \(prompt.archiveName)。安装完成后 dashboard 会自动重启。"),
+                primaryButton: .default(Text("安装更新")) {
+                    store.installAvailableUpdate()
+                },
+                secondaryButton: .cancel(Text("稍后"))
+            )
+        }
         .task {
             store.start()
         }
@@ -85,6 +95,12 @@ private struct HeaderView: View {
                         Label("打开日志目录", systemImage: "terminal")
                     }
 
+                    Button {
+                        store.checkForUpdates()
+                    } label: {
+                        Label("检查更新", systemImage: "arrow.down.circle")
+                    }
+
                     Divider()
 
                     Button {
@@ -113,7 +129,7 @@ private struct HeaderView: View {
 
     private var statusLine: String {
         let updated = store.lastUpdated.map { Self.dateFormatter.string(from: $0) } ?? "尚未刷新"
-        return "\(store.message) · \(updated)"
+        return "\(store.message) · v\(AppVersion.current) · \(updated)"
     }
 
     private static let dateFormatter: DateFormatter = {

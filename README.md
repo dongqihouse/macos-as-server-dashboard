@@ -13,6 +13,7 @@
 - 服务自启动：dashboard 启动时可自动执行配置里的本机服务命令。
 - GUI 管理：可以在面板里新增、编辑、启动、停止、删除本机容器服务。
 - 日志查看：本机容器服务可在 dashboard 内查看最近日志，也可以打开原始日志文件。
+- 应用内更新：可以从 GitHub Release 检查新版本，校验 SHA256 后安装更新包。
 - 配置热更新：外部修改配置文件后，dashboard 会自动重新读取并刷新 UI。
 - 错误提示：启动失败、服务异常退出、配置读写失败会弹窗提示，服务错误可直接查看日志。
 
@@ -46,8 +47,9 @@ swift build -c release
 
 发布采用 tag 触发 GitHub Actions 的方式：本地只创建并推送版本 tag，GitHub Actions 在 macOS runner 上构建包、生成 SHA256 校验文件，并用 GitHub CLI 创建 Release 和上传资产。
 
-1. 确认工作区干净并提交所有变更。
-2. 创建并推送版本 tag：
+1. 更新 `Sources/MacServerDashboard/AppVersion.swift` 里的 `AppVersion.current`。
+2. 确认工作区干净并提交所有变更。
+3. 创建并推送版本 tag：
 
 ```bash
 scripts/release.sh v0.1.0
@@ -67,6 +69,10 @@ scripts/package-release.sh v0.1.0
 ```
 
 生成的文件会放在 `dist/`。应用内置更新可以读取 GitHub latest release，选择 `MacServerDashboard-*-macos-*.tar.gz` 资产下载，并用同版本 `checksums.txt` 校验 SHA256。
+
+## 应用内更新
+
+右上角菜单里点击“检查更新”，dashboard 会读取 GitHub latest release。发现新版本后，用户确认安装即可自动下载当前架构的安装包、校验 SHA256，并替换当前可执行文件。安装完成后退出并重新打开 dashboard，新版本会生效。
 
 ## 安装开机自启
 

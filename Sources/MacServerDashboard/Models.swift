@@ -8,6 +8,13 @@ struct DashboardAlert: Identifiable, Equatable {
     var logServiceID: String?
 }
 
+struct UpdatePrompt: Identifiable, Equatable {
+    var id: String { tagName }
+    var tagName: String
+    var version: String
+    var archiveName: String
+}
+
 enum ServiceKind: String, CaseIterable, Identifiable, Sendable {
     case local = "本机容器服务"
     case docker = "Docker 容器"
