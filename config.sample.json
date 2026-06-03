@@ -1,0 +1,26 @@
+{
+  "desktopPinned" : true,
+  "localServices" : [
+    {
+      "autoStart" : true,
+      "command" : "npm run dev -- --host 0.0.0.0 --port 3000",
+      "id" : "homepage",
+      "name" : "Homepage",
+      "note" : "本机 Node 服务",
+      "ports" : [
+        {
+          "host" : "127.0.0.1",
+          "note" : "Homepage HTTP",
+          "port" : 3000,
+          "protocolName" : "tcp"
+        }
+      ],
+      "workingDirectory" : "~/Sites/homepage"
+    }
+  ],
+  "portNotes" : {
+    "127.0.0.1:8080/tcp" : "Docker 示例服务"
+  },
+  "refreshIntervalSeconds" : 5,
+  "startConfiguredLocalServicesOnLaunch" : false
+}
