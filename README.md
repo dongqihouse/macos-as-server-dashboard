@@ -42,6 +42,32 @@ swift build -c release
 .build/release/MacServerDashboard
 ```
 
+## 发布 GitHub Release
+
+发布采用 tag 触发 GitHub Actions 的方式：本地只创建并推送版本 tag，GitHub Actions 在 macOS runner 上构建包、生成 SHA256 校验文件，并用 GitHub CLI 创建 Release 和上传资产。
+
+1. 确认工作区干净并提交所有变更。
+2. 创建并推送版本 tag：
+
+```bash
+scripts/release.sh v0.1.0
+```
+
+3. GitHub Actions 会生成并上传：
+
+```text
+MacServerDashboard-v0.1.0-macos-<arch>.tar.gz
+MacServerDashboard-v0.1.0-checksums.txt
+```
+
+也可以只在本机打包验证：
+
+```bash
+scripts/package-release.sh v0.1.0
+```
+
+生成的文件会放在 `dist/`。应用内置更新可以读取 GitHub latest release，选择 `MacServerDashboard-*-macos-*.tar.gz` 资产下载，并用同版本 `checksums.txt` 校验 SHA256。
+
 ## 安装开机自启
 
 可以在 dashboard 右上角点击闪电图标安装，也可以运行：

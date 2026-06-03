@@ -2,12 +2,24 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BINARY_PATH="${1:-"$ROOT_DIR/.build/release/MacServerDashboard"}"
+DEFAULT_BINARY_PATH="$ROOT_DIR/.build/release/MacServerDashboard"
+BINARY_PATH="${1:-"$DEFAULT_BINARY_PATH"}"
 LABEL="dev.codex.mac-server-dashboard"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 
-cd "$ROOT_DIR"
-swift build -c release
+if [[ "$BINARY_PATH" != /* ]]; then
+  BINARY_PATH="$ROOT_DIR/$BINARY_PATH"
+fi
+
+if [[ -f "$ROOT_DIR/Package.swift" ]]; then
+  cd "$ROOT_DIR"
+  swift build -c release
+fi
+
+if [[ ! -x "$BINARY_PATH" ]]; then
+  echo "Executable not found: $BINARY_PATH" >&2
+  exit 1
+fi
 
 mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs/MacServerDashboard"
 
