@@ -122,7 +122,7 @@ scripts/uninstall-launch-agent.sh
 ~/Library/Logs/MacServerDashboard/
 ```
 
-服务启动时会优先把 `~/.bun/bin`、`~/.local/bin`、`~/.cargo/bin`、Docker Desktop CLI 路径放进 `PATH`，避免 macOS GUI 启动环境找不到 Bun、Node、Docker 等工具。
+服务启动时会优先解析 NVM Node 路径：先使用服务工作目录下的 `.nvmrc`，其次使用 `~/.nvm/alias/default`，最后使用已安装的最高 Node 版本，并只把选中的 `~/.nvm/versions/node/<version>/bin` 放进 `PATH`。同时会补充 `~/.bun/bin`、`~/.local/bin`、`~/.cargo/bin`、Docker Desktop CLI 路径，避免 macOS GUI 启动环境找不到 Node、Bun、Docker、`lark-cli` 等工具。
 
 Python/FastAPI 服务会额外优先使用工作目录下的 `.venv/bin` 或 `venv/bin`，也会补充 `~/.pyenv/shims`、`~/.asdf/shims`、`~/Library/Python/*/bin` 等常见路径。如果仍提示 `uvicorn: command not found`，建议把命令写成 `./.venv/bin/uvicorn ...` 或 `python -m uvicorn ...`。
 

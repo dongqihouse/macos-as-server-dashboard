@@ -178,15 +178,26 @@ enum CommandRunner {
 
     private static func serviceCommand(_ command: String, environment: [String: String]) -> String {
         let path = environment["PATH"] ?? defaultPath
-        return "export PATH=\(shellEscaped(path)):$PATH\n\(command)"
+        let nvmDirectory = environment["NVM_DIR"] ?? "\(FileManager.default.homeDirectoryForCurrentUser.path)/.nvm"
+        return """
+        export NVM_DIR=\(shellEscaped(nvmDirectory))
+        if [ -s "$NVM_DIR/nvm.sh" ]; then . "$NVM_DIR/nvm.sh" --no-use; fi
+        export PATH=\(shellEscaped(path)):$PATH
+        \(command)
+        """
     }
 
     private static func mergedEnvironment(workingDirectory: String? = nil) -> [String: String] {
         var environment = ProcessInfo.processInfo.environment
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         environment["BUN_INSTALL"] = environment["BUN_INSTALL"] ?? "\(home)/.bun"
+        environment["NVM_DIR"] = environment["NVM_DIR"] ?? "\(home)/.nvm"
 
         var preferredPaths = pythonVirtualEnvPaths(workingDirectory: workingDirectory)
+        if let nvmNodeBinPath = nvmNodeBinPath(workingDirectory: workingDirectory, home: home) {
+            preferredPaths.append(nvmNodeBinPath)
+            environment["NVM_BIN"] = nvmNodeBinPath
+        }
         preferredPaths.append(contentsOf: [
             "\(home)/.pyenv/shims",
             "\(home)/.asdf/shims",
@@ -224,6 +235,135 @@ enum CommandRunner {
             "\(expandedWorkingDirectory)/.venv/bin",
             "\(expandedWorkingDirectory)/venv/bin"
         ]
+    }
+
+    private static func nvmNodeBinPath(workingDirectory: String?, home: String) -> String? {
+        let versionsRoot = URL(fileURLWithPath: home)
+            .appendingPathComponent(".nvm/versions/node", isDirectory: true)
+        let installedVersions = installedNVMNodeVersions(in: versionsRoot)
+        guard !installedVersions.isEmpty else {
+            return nil
+        }
+
+        let requestedVersion = nvmVersionRequest(workingDirectory: workingDirectory, home: home)
+        let selectedVersion = requestedVersion.flatMap {
+            resolveNVMVersion($0, installedVersions: installedVersions, home: home)
+        } ?? installedVersions.first
+
+        guard let selectedVersion else {
+            return nil
+        }
+
+        let binPath = versionsRoot
+            .appendingPathComponent(selectedVersion, isDirectory: true)
+            .appendingPathComponent("bin", isDirectory: true)
+            .path
+        return FileManager.default.fileExists(atPath: binPath) ? binPath : nil
+    }
+
+    private static func installedNVMNodeVersions(in versionsRoot: URL) -> [String] {
+        guard let versions = try? FileManager.default.contentsOfDirectory(
+            at: versionsRoot,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+
+        return versions
+            .filter { ((try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false) }
+            .map(\.lastPathComponent)
+            .filter { $0.hasPrefix("v") }
+            .sorted { $0.localizedStandardCompare($1) == .orderedDescending }
+    }
+
+    private static func nvmVersionRequest(workingDirectory: String?, home: String) -> String? {
+        if let workingDirectory, !workingDirectory.isEmpty {
+            let nvmrcURL = URL(fileURLWithPath: expandingTilde(workingDirectory))
+                .appendingPathComponent(".nvmrc")
+            if let nvmrcVersion = readNVMVersionFile(nvmrcURL) {
+                return nvmrcVersion
+            }
+        }
+
+        let defaultAliasURL = URL(fileURLWithPath: home)
+            .appendingPathComponent(".nvm/alias/default")
+        return readNVMVersionFile(defaultAliasURL)
+    }
+
+    private static func resolveNVMVersion(
+        _ request: String,
+        installedVersions: [String],
+        home: String,
+        visitedAliases: Set<String> = []
+    ) -> String? {
+        let normalized = request.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty, normalized != "system" else {
+            return nil
+        }
+
+        if normalized == "node" || normalized == "stable" || normalized == "unstable" || normalized == "lts/*" {
+            return installedVersions.first
+        }
+
+        let explicitVersion = normalized.hasPrefix("v") ? normalized : "v\(normalized)"
+        if installedVersions.contains(explicitVersion) {
+            return explicitVersion
+        }
+
+        let versionPrefix = explicitVersion.dropFirst()
+        if let matchingVersion = installedVersions.first(where: {
+            $0.dropFirst() == versionPrefix || $0.dropFirst().hasPrefix("\(versionPrefix).")
+        }) {
+            return matchingVersion
+        }
+
+        guard !visitedAliases.contains(normalized),
+              let aliasValue = readNVMAlias(normalized, home: home) else {
+            return nil
+        }
+
+        return resolveNVMVersion(
+            aliasValue,
+            installedVersions: installedVersions,
+            home: home,
+            visitedAliases: visitedAliases.union([normalized])
+        )
+    }
+
+    private static func readNVMAlias(_ alias: String, home: String) -> String? {
+        let aliasComponents = alias
+            .split(separator: "/")
+            .map(String.init)
+        guard !aliasComponents.isEmpty,
+              !aliasComponents.contains(where: { $0 == "." || $0 == ".." }) else {
+            return nil
+        }
+
+        var aliasURL = URL(fileURLWithPath: home)
+            .appendingPathComponent(".nvm/alias", isDirectory: true)
+        for component in aliasComponents {
+            aliasURL.appendPathComponent(component)
+        }
+        return readNVMVersionFile(aliasURL)
+    }
+
+    private static func readNVMVersionFile(_ url: URL) -> String? {
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else {
+            return nil
+        }
+
+        return text
+            .split(separator: "\n")
+            .compactMap { line -> String? in
+                let uncommented = line
+                    .split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)
+                    .first
+                    .map(String.init) ?? ""
+                let trimmed = uncommented.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? nil : trimmed
+            }
+            .first
     }
 
     private static func pythonUserInstallPaths(home: String) -> [String] {
