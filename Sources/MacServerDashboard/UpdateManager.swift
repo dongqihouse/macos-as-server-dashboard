@@ -12,6 +12,11 @@ struct AvailableUpdate: Hashable, Sendable {
     var checksumURL: URL
 }
 
+struct UpdateInstallProgress: Sendable {
+    var detail: String
+    var fraction: Double?
+}
+
 enum UpdateManager {
     static let repository = "dongqihouse/macos-as-server-dashboard"
 
@@ -50,7 +55,11 @@ enum UpdateManager {
         )
     }
 
-    static func install(_ update: AvailableUpdate) async throws -> URL {
+    static func install(
+        _ update: AvailableUpdate,
+        progress: @escaping @Sendable (UpdateInstallProgress) -> Void
+    ) async throws -> URL {
+        progress(UpdateInstallProgress(detail: "准备安装更新", fraction: 0.02))
         guard let executableURL = currentExecutableURL() else {
             throw UpdateError.installFailed("无法确定当前可执行文件路径。")
         }
@@ -73,9 +82,19 @@ enum UpdateManager {
 
         let installerURL = workDirectory.appendingPathComponent(update.archiveName)
         let checksumURL = workDirectory.appendingPathComponent(update.checksumName)
-        try await download(update.archiveURL, to: installerURL)
-        try await download(update.checksumURL, to: checksumURL)
+        progress(UpdateInstallProgress(detail: "正在下载 DMG", fraction: 0.05))
+        try await download(update.archiveURL, to: installerURL) { downloadFraction in
+            let fraction = 0.05 + (downloadFraction ?? 0) * 0.55
+            progress(UpdateInstallProgress(detail: "正在下载 DMG", fraction: downloadFraction == nil ? nil : fraction))
+        }
 
+        progress(UpdateInstallProgress(detail: "正在下载 checksum", fraction: 0.62))
+        try await download(update.checksumURL, to: checksumURL) { downloadFraction in
+            let fraction = 0.62 + (downloadFraction ?? 0) * 0.08
+            progress(UpdateInstallProgress(detail: "正在下载 checksum", fraction: downloadFraction == nil ? nil : fraction))
+        }
+
+        progress(UpdateInstallProgress(detail: "正在校验 SHA256", fraction: 0.72))
         let checksumText = try String(contentsOf: checksumURL, encoding: .utf8)
         guard let expectedChecksum = checksum(in: checksumText, for: update.archiveName) else {
             throw UpdateError.checksumFailed("checksum 文件里没有 \(update.archiveName)。")
@@ -86,11 +105,15 @@ enum UpdateManager {
             throw UpdateError.checksumFailed("SHA256 不匹配。期望 \(expectedChecksum)，实际 \(actualChecksum)。")
         }
 
+        progress(UpdateInstallProgress(detail: "正在挂载 DMG", fraction: 0.78))
         try await attachDiskImage(installerURL, to: mountDirectory)
         do {
+            progress(UpdateInstallProgress(detail: "正在查找新版本应用", fraction: 0.84))
             let newAppURL = try findPackagedApp(in: mountDirectory)
+            progress(UpdateInstallProgress(detail: "正在替换应用", fraction: 0.9))
             let installedAppURL = try replaceAppBundle(at: currentAppURL, with: newAppURL)
             await detachDiskImage(at: mountDirectory)
+            progress(UpdateInstallProgress(detail: "安装完成", fraction: 0.96))
             return installedAppURL
                 .appendingPathComponent("Contents/MacOS", isDirectory: true)
                 .appendingPathComponent(executableURL.lastPathComponent)
@@ -141,11 +164,15 @@ enum UpdateManager {
         return try JSONDecoder().decode(GitHubRelease.self, from: data)
     }
 
-    private static func download(_ remoteURL: URL, to localURL: URL) async throws {
+    private static func download(
+        _ remoteURL: URL,
+        to localURL: URL,
+        progress: @escaping @Sendable (Double?) -> Void
+    ) async throws {
         var request = URLRequest(url: remoteURL)
         request.setValue("MacServerDashboard/\(AppVersion.current)", forHTTPHeaderField: "User-Agent")
 
-        let (temporaryURL, response) = try await URLSession.shared.download(for: request)
+        let (bytes, response) = try await URLSession.shared.bytes(for: request)
         guard let httpResponse = response as? HTTPURLResponse,
               200..<300 ~= httpResponse.statusCode else {
             throw UpdateError.networkFailed("下载失败：\(remoteURL.absoluteString)")
@@ -154,7 +181,39 @@ enum UpdateManager {
         if FileManager.default.fileExists(atPath: localURL.path) {
             try FileManager.default.removeItem(at: localURL)
         }
-        try FileManager.default.moveItem(at: temporaryURL, to: localURL)
+
+        FileManager.default.createFile(atPath: localURL.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: localURL)
+        let expectedBytes = httpResponse.expectedContentLength
+        var receivedBytes: Int64 = 0
+        var buffer = Data()
+        buffer.reserveCapacity(64 * 1024)
+
+        do {
+            for try await byte in bytes {
+                buffer.append(byte)
+                receivedBytes += 1
+
+                if buffer.count >= 64 * 1024 {
+                    handle.write(buffer)
+                    buffer.removeAll(keepingCapacity: true)
+                }
+
+                if expectedBytes > 0, receivedBytes % 16_384 == 0 {
+                    progress(min(Double(receivedBytes) / Double(expectedBytes), 1))
+                }
+            }
+
+            if !buffer.isEmpty {
+                handle.write(buffer)
+            }
+            progress(expectedBytes > 0 ? 1 : nil)
+            try handle.close()
+        } catch {
+            try? handle.close()
+            try? FileManager.default.removeItem(at: localURL)
+            throw error
+        }
     }
 
     private static func attachDiskImage(_ diskImageURL: URL, to mountURL: URL) async throws {
@@ -252,10 +311,14 @@ enum UpdateManager {
     private static func openAppBundle(_ appURL: URL) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        process.arguments = [appURL.path]
+        process.arguments = ["-n", appURL.path]
 
         do {
             try process.run()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else {
+                throw UpdateError.relaunchFailed("open 返回退出码 \(process.terminationStatus)")
+            }
         } catch {
             throw UpdateError.relaunchFailed(error.localizedDescription)
         }

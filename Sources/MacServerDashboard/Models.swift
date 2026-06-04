@@ -15,6 +15,12 @@ struct UpdatePrompt: Identifiable, Equatable {
     var archiveName: String
 }
 
+struct UpdateProgressState: Equatable {
+    var title: String
+    var detail: String
+    var fraction: Double?
+}
+
 enum ServiceKind: String, CaseIterable, Identifiable, Sendable {
     case local = "本机容器服务"
     case docker = "Docker 容器"

@@ -34,13 +34,13 @@ swift run MacServerDashboard
 ## 构建 Release
 
 ```bash
-scripts/package-release.sh v0.1.4
+scripts/package-release.sh v0.1.5
 ```
 
 生成的安装包在：
 
 ```text
-dist/MacServerDashboard-v0.1.4-macos-<arch>.dmg
+dist/MacServerDashboard-v0.1.5-macos-<arch>.dmg
 ```
 
 打开 DMG 后，将 `MacServerDashboard.app` 拖到 `Applications`。
@@ -76,7 +76,7 @@ scripts/package-release.sh v0.1.0
 
 ## 应用内更新
 
-右上角菜单里点击“检查更新”，dashboard 会读取 GitHub latest release。发现新版本后，用户确认安装即可自动下载当前架构的 DMG、校验 SHA256，并替换当前 `MacServerDashboard.app`。安装完成后 dashboard 会自动重启。
+右上角菜单里点击“检查更新”，dashboard 会读取 GitHub latest release。发现新版本后，用户确认安装即可自动下载当前架构的 DMG、校验 SHA256，并替换当前 `MacServerDashboard.app`。安装过程会显示进度，安装完成后 dashboard 会自动重启。
 
 ## 安装开机自启
 
@@ -122,9 +122,19 @@ scripts/uninstall-launch-agent.sh
 ~/Library/Logs/MacServerDashboard/
 ```
 
-服务启动时会优先把 `~/.bun/bin`、`~/.local/bin`、`~/.cargo/bin` 放进 `PATH`，避免 macOS GUI 启动环境找不到 Bun、Node 等用户目录里的工具。
+服务启动时会优先把 `~/.bun/bin`、`~/.local/bin`、`~/.cargo/bin`、Docker Desktop CLI 路径放进 `PATH`，避免 macOS GUI 启动环境找不到 Bun、Node、Docker 等工具。
 
 Python/FastAPI 服务会额外优先使用工作目录下的 `.venv/bin` 或 `venv/bin`，也会补充 `~/.pyenv/shims`、`~/.asdf/shims`、`~/Library/Python/*/bin` 等常见路径。如果仍提示 `uvicorn: command not found`，建议把命令写成 `./.venv/bin/uvicorn ...` 或 `python -m uvicorn ...`。
+
+## 日志
+
+App 自身日志写入：
+
+```text
+~/Library/Logs/MacServerDashboard/app.log
+```
+
+本机服务日志也在同一目录。右上角菜单可以打开日志目录或直接打开 App 日志。
 
 如果启动失败日志显示配置端口已被占用，dashboard 会只针对该服务配置的监控端口查找监听进程，先发送 `TERM`，端口仍未释放时再发送 `KILL`，然后重试启动一次。
 

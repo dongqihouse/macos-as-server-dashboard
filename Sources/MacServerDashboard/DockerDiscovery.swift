@@ -4,12 +4,15 @@ enum DockerDiscovery {
     static func discover() async -> [DockerContainer] {
         let result = await CommandRunner.run("docker ps --format '{{json .}}'", timeout: 3)
         guard result.exitCode == 0 else {
+            AppLogger.error("Docker discovery failed exit=\(result.exitCode): \(result.output)")
             return []
         }
 
-        return result.output
+        let containers = result.output
             .split(separator: "\n")
             .compactMap { parseContainerLine(String($0)) }
+        AppLogger.info("Docker discovery completed count=\(containers.count)")
+        return containers
     }
 
     private static func parseContainerLine(_ line: String) -> DockerContainer? {

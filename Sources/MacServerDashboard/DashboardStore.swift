@@ -14,6 +14,7 @@ final class DashboardStore: ObservableObject {
     @Published private(set) var localServiceRuntimeMessages: [String: String] = [:]
     @Published var activeAlert: DashboardAlert?
     @Published var updatePrompt: UpdatePrompt?
+    @Published var updateProgress: UpdateProgressState?
 
     private var refreshTimer: Timer?
     private var refreshTimerInterval: TimeInterval?
@@ -43,6 +44,8 @@ final class DashboardStore: ObservableObject {
     }
 
     func start() {
+        AppLogger.ensureLogFileExists()
+        AppLogger.info("Dashboard starting version=\(AppVersion.current) pid=\(ProcessInfo.processInfo.processIdentifier)")
         ensureConfigExists()
         loadConfig()
         launchAgentInstalled = LaunchAgentManager.isInstalled
@@ -65,6 +68,7 @@ final class DashboardStore: ObservableObject {
         let refreshConfigVersion = configVersion
         isRefreshing = true
         message = "正在刷新"
+        AppLogger.info("Refresh started configVersion=\(refreshConfigVersion)")
         loadConfig()
         let currentConfig = config
 
@@ -79,6 +83,7 @@ final class DashboardStore: ObservableObject {
         guard refreshConfigVersion == configVersion else {
             pendingRefresh = true
             isRefreshing = false
+            AppLogger.info("Refresh deferred due to config change refreshVersion=\(refreshConfigVersion) currentVersion=\(configVersion)")
             runPendingRefreshIfNeeded()
             return
         }
@@ -88,6 +93,10 @@ final class DashboardStore: ObservableObject {
         systemStatus = status
         lastUpdated = Date()
         message = "已刷新"
+        AppLogger.info(
+            "Refresh completed local=\(localSnapshots.count) docker=\(dockerSnapshots.count) " +
+                "storage=\(status.storageUsedBytes != nil) cpu=\(status.cpuUsagePercent != nil) memory=\(status.memoryUsedBytes != nil) temperature=\(status.temperatureCelsius != nil)"
+        )
         isRefreshing = false
         runPendingRefreshIfNeeded()
     }
@@ -103,7 +112,9 @@ final class DashboardStore: ObservableObject {
         }
 
         isCheckingForUpdates = true
+        updateProgress = nil
         message = "正在检查更新"
+        AppLogger.info("Checking for updates")
         Task {
             do {
                 let update = try await UpdateManager.checkForUpdate()
@@ -111,12 +122,14 @@ final class DashboardStore: ObservableObject {
 
                 guard let update else {
                     message = "已是最新版本"
+                    AppLogger.info("No update available current=\(AppVersion.current)")
                     showError(title: "已是最新版本", message: "当前版本 \(AppVersion.current) 已是最新版本。")
                     return
                 }
 
                 availableUpdate = update
                 message = "发现新版本 \(update.tagName)"
+                AppLogger.info("Update available tag=\(update.tagName) asset=\(update.archiveName)")
                 updatePrompt = UpdatePrompt(
                     tagName: update.tagName,
                     version: update.version,
@@ -125,6 +138,7 @@ final class DashboardStore: ObservableObject {
             } catch {
                 isCheckingForUpdates = false
                 message = "检查更新失败"
+                AppLogger.error("Check update failed: \(error.localizedDescription)")
                 showError(title: "检查更新失败", message: error.localizedDescription)
             }
         }
@@ -137,17 +151,33 @@ final class DashboardStore: ObservableObject {
 
         isInstallingUpdate = true
         message = "正在安装 \(update.tagName)"
+        updateProgress = UpdateProgressState(title: "正在安装 \(update.tagName)", detail: "准备下载更新", fraction: 0.02)
+        AppLogger.info("Installing update tag=\(update.tagName) asset=\(update.archiveName)")
         Task {
             do {
-                let installedURL = try await UpdateManager.install(update)
+                let installedURL = try await UpdateManager.install(update) { [weak self] progress in
+                    Task { @MainActor [weak self] in
+                        self?.updateProgress = UpdateProgressState(
+                            title: "正在安装 \(update.tagName)",
+                            detail: progress.detail,
+                            fraction: progress.fraction
+                        )
+                        self?.message = progress.detail
+                    }
+                }
                 isInstallingUpdate = false
                 availableUpdate = nil
                 message = "已安装 \(update.tagName)，正在重启"
+                updateProgress = UpdateProgressState(title: "正在安装 \(update.tagName)", detail: "正在重启 dashboard", fraction: 0.98)
+                AppLogger.info("Update installed tag=\(update.tagName) executable=\(installedURL.path)")
                 do {
                     try UpdateManager.relaunch(from: installedURL)
+                    try? await Task.sleep(nanoseconds: 700_000_000)
                     NSApplication.shared.terminate(nil)
                 } catch {
                     message = "已安装 \(update.tagName)"
+                    updateProgress = nil
+                    AppLogger.error("Relaunch failed after update tag=\(update.tagName): \(error.localizedDescription)")
                     showError(
                         title: "更新已安装",
                         message: "已安装 \(update.tagName)，但自动重启失败：\(error.localizedDescription)\n\n请手动重新打开：\(installedURL.path)"
@@ -155,7 +185,9 @@ final class DashboardStore: ObservableObject {
                 }
             } catch {
                 isInstallingUpdate = false
+                updateProgress = nil
                 message = "安装更新失败"
+                AppLogger.error("Install update failed tag=\(update.tagName): \(error.localizedDescription)")
                 showError(title: "安装更新失败", message: error.localizedDescription)
             }
         }
@@ -166,6 +198,11 @@ final class DashboardStore: ObservableObject {
             .appendingPathComponent("Library/Logs/MacServerDashboard", isDirectory: true)
         try? FileManager.default.createDirectory(at: logsDirectory, withIntermediateDirectories: true)
         NSWorkspace.shared.open(logsDirectory)
+    }
+
+    func openAppLog() {
+        AppLogger.ensureLogFileExists()
+        NSWorkspace.shared.open(AppLogger.appLogURL)
     }
 
     func openLocalServiceLog(serviceID: String) {

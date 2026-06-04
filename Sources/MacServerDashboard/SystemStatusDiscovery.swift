@@ -24,6 +24,7 @@ enum SystemStatusDiscovery {
             let attributes = try FileManager.default.attributesOfFileSystem(forPath: "/")
             guard let total = attributes[.systemSize] as? NSNumber,
                   let free = attributes[.systemFreeSize] as? NSNumber else {
+                AppLogger.error("Storage discovery failed: missing file system size attributes")
                 return nil
             }
 
@@ -31,6 +32,7 @@ enum SystemStatusDiscovery {
             let freeBytes = min(free.uint64Value, totalBytes)
             return (used: totalBytes - freeBytes, total: totalBytes)
         } catch {
+            AppLogger.error("Storage discovery failed: \(error.localizedDescription)")
             return nil
         }
     }
@@ -39,6 +41,7 @@ enum SystemStatusDiscovery {
         let total = ProcessInfo.processInfo.physicalMemory
         let result = await CommandRunner.run("vm_stat", timeout: 2)
         guard result.exitCode == 0 else {
+            AppLogger.error("Memory discovery failed exit=\(result.exitCode): \(result.output)")
             return nil
         }
 
@@ -51,11 +54,13 @@ enum SystemStatusDiscovery {
 
     private static func cpuUsagePercent() async -> Double? {
         guard let first = cpuTicks() else {
+            AppLogger.error("CPU discovery failed: first host_statistics call failed")
             return nil
         }
 
         try? await Task.sleep(nanoseconds: 250_000_000)
         guard let second = cpuTicks() else {
+            AppLogger.error("CPU discovery failed: second host_statistics call failed")
             return nil
         }
 
@@ -83,6 +88,7 @@ enum SystemStatusDiscovery {
             return temperature
         }
 
+        AppLogger.info("Temperature discovery unavailable")
         return nil
     }
 

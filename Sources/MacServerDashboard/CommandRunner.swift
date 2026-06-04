@@ -12,20 +12,29 @@ enum CommandRunner {
         await withCheckedContinuation { continuation in
             let process = Process()
             let pipe = Pipe()
+            let outputHandle = pipe.fileHandleForReading
+            let outputBuffer = CommandOutputBuffer()
             process.executableURL = URL(fileURLWithPath: "/bin/zsh")
             process.arguments = ["-c", command]
             process.environment = mergedEnvironment()
             process.standardOutput = pipe
             process.standardError = pipe
+            outputHandle.readabilityHandler = { handle in
+                let data = handle.availableData
+                guard !data.isEmpty else {
+                    return
+                }
+                outputBuffer.append(data)
+            }
 
             do {
                 try process.run()
             } catch {
+                outputHandle.readabilityHandler = nil
                 continuation.resume(returning: CommandResult(exitCode: 127, output: error.localizedDescription))
                 return
             }
 
-            let outputHandle = pipe.fileHandleForReading
             DispatchQueue.global(qos: .utility).async {
                 let deadline = Date().addingTimeInterval(timeout)
                 while process.isRunning && Date() < deadline {
@@ -41,8 +50,12 @@ enum CommandRunner {
                 }
 
                 process.waitUntilExit()
-                let data = outputHandle.readDataToEndOfFile()
+                outputHandle.readabilityHandler = nil
+                let data = outputBuffer.snapshot()
                 let output = String(data: data, encoding: .utf8) ?? ""
+                if process.terminationStatus != 0 {
+                    AppLogger.error("Command failed exit=\(process.terminationStatus): \(command)\n\(truncated(output))")
+                }
                 continuation.resume(returning: CommandResult(exitCode: process.terminationStatus, output: output))
             }
         }
@@ -56,6 +69,7 @@ enum CommandRunner {
     ) throws -> Process {
         let process = Process()
         let environment = mergedEnvironment(workingDirectory: workingDirectory)
+        AppLogger.info("Starting service command log=\(logName) cwd=\(workingDirectory ?? "") command=\(command)")
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
         process.arguments = ["-lc", serviceCommand(command, environment: environment)]
         process.environment = environment
@@ -76,6 +90,7 @@ enum CommandRunner {
         process.standardError = handle
 
         try process.run()
+        AppLogger.info("Started service command log=\(logName) pid=\(process.processIdentifier)")
         return process
     }
 
@@ -181,6 +196,7 @@ enum CommandRunner {
             "\(home)/.bun/bin",
             "\(home)/.local/bin",
             "\(home)/.cargo/bin",
+            "/Applications/Docker.app/Contents/Resources/bin",
             "/opt/homebrew/bin",
             "/opt/homebrew/sbin",
             "/usr/local/bin",
@@ -236,5 +252,30 @@ enum CommandRunner {
         }
 
         return result
+    }
+
+    private static func truncated(_ value: String, maxCharacters: Int = 2_000) -> String {
+        if value.count <= maxCharacters {
+            return value
+        }
+        return String(value.prefix(maxCharacters)) + "\n...<truncated>"
+    }
+}
+
+private final class CommandOutputBuffer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var data = Data()
+
+    func append(_ nextData: Data) {
+        lock.lock()
+        data.append(nextData)
+        lock.unlock()
+    }
+
+    func snapshot() -> Data {
+        lock.lock()
+        let currentData = data
+        lock.unlock()
+        return currentData
     }
 }

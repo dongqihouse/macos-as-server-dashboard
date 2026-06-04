@@ -4,18 +4,24 @@ struct ContentView: View {
     @StateObject private var store = DashboardStore()
 
     var body: some View {
-        VStack(spacing: 0) {
-            WindowConfigurator(pinned: store.config.desktopPinned)
-                .frame(width: 0, height: 0)
-            HeaderView(store: store)
-            Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    ServiceGroupView(title: ServiceKind.local.rawValue, services: store.localServices, store: store)
-                    ServiceGroupView(title: ServiceKind.docker.rawValue, services: store.dockerServices, store: store)
-                    SystemStatusView(status: store.systemStatus)
+        ZStack {
+            VStack(spacing: 0) {
+                WindowConfigurator(pinned: store.config.desktopPinned)
+                    .frame(width: 0, height: 0)
+                HeaderView(store: store)
+                Divider()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        ServiceGroupView(title: ServiceKind.local.rawValue, services: store.localServices, store: store)
+                        ServiceGroupView(title: ServiceKind.docker.rawValue, services: store.dockerServices, store: store)
+                        SystemStatusView(status: store.systemStatus)
+                    }
+                    .padding(14)
                 }
-                .padding(14)
+            }
+
+            if let updateProgress = store.updateProgress {
+                UpdateProgressOverlay(progress: updateProgress)
             }
         }
         .frame(minWidth: 420, idealWidth: 500, minHeight: 560, idealHeight: 680)
@@ -50,6 +56,36 @@ struct ContentView: View {
         }
         .task {
             store.start()
+        }
+    }
+}
+
+private struct UpdateProgressOverlay: View {
+    var progress: UpdateProgressState
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.08)
+                .ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text(progress.title)
+                    .font(.headline)
+                Text(progress.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if let fraction = progress.fraction {
+                    ProgressView(value: min(max(fraction, 0), 1))
+                } else {
+                    ProgressView()
+                }
+            }
+            .padding(16)
+            .frame(width: 300)
+            .background(.regularMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .shadow(radius: 12)
         }
     }
 }
@@ -93,6 +129,12 @@ private struct HeaderView: View {
                         store.revealLogs()
                     } label: {
                         Label("打开日志目录", systemImage: "terminal")
+                    }
+
+                    Button {
+                        store.openAppLog()
+                    } label: {
+                        Label("打开 App 日志", systemImage: "doc.text.magnifyingglass")
                     }
 
                     Button {
