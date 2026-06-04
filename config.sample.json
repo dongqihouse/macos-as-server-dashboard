@@ -6,7 +6,7 @@
       "command" : "npm run dev -- --host 0.0.0.0 --port 3000",
       "id" : "homepage",
       "name" : "Homepage",
-      "note" : "本机 Node 服务",
+      "note" : "Local Node service",
       "ports" : [
         {
           "host" : "127.0.0.1",
@@ -19,7 +19,7 @@
     }
   ],
   "portNotes" : {
-    "127.0.0.1:8080/tcp" : "Docker 示例服务"
+    "127.0.0.1:8080/tcp" : "Docker sample service"
   },
   "refreshIntervalSeconds" : 5,
   "startConfiguredLocalServicesOnLaunch" : false

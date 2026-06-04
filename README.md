@@ -1,101 +1,106 @@
 # macOS as Server Dashboard
 
-一个贴在 macOS 桌面上的轻量服务观测面板，用来快速查看本机容器服务、Docker 容器和本机状态。
+[简体中文](README.zh-CN.md)
 
-## 功能
+A lightweight dashboard that can sit on the macOS desktop and show local services, Docker containers, and system status at a glance.
 
-- 桌面贴附：窗口默认放在桌面层级，并出现在所有 Space。
-- 本机状态：展示存储已用/总量、CPU 占用、内存已用/总量和网络连通性。
-- 服务区分：本机容器服务、Docker 容器分区展示。
-- 端口连通性：用 `nc` 检测 TCP 端口是否可连接。
-- 端口备注：每个端口都可以写备注，保存到配置文件。
-- 开机自启：支持通过 LaunchAgent 自动打开 dashboard。
-- 服务自启动：dashboard 启动时可自动执行配置里的本机服务命令。
-- GUI 管理：可以在面板里新增、编辑、启动、停止、删除本机容器服务。
-- 日志查看：本机容器服务可在 dashboard 内查看最近日志，也可以打开原始日志文件。
-- 应用内更新：可以从 GitHub Release 检查新版本，校验 SHA256 后安装更新包。
-- 配置热更新：外部修改配置文件后，dashboard 会自动重新读取并刷新 UI。
-- 错误提示：启动失败、服务异常退出、配置读写失败会弹窗提示，服务错误可直接查看日志。
+![Mac Server Dashboard demo](imgs/demo-image.jpg)
 
-## 运行
+## Features
+
+- Desktop pinning: keeps the window at desktop level and visible across Spaces.
+- System status: shows storage usage, CPU usage, memory usage, and network connectivity.
+- Service grouping: separates local services from Docker containers.
+- Port checks: uses `nc` to test whether TCP ports are reachable.
+- Port notes: stores per-port notes in the config file.
+- Login item: can install a LaunchAgent to open the dashboard automatically at login.
+- Service autostart: can run configured local service commands when the dashboard starts.
+- GUI management: add, edit, start, stop, and delete local services from the dashboard.
+- Log viewer: view recent local service logs inside the dashboard or open the raw log file.
+- In-app updates: checks GitHub Releases, verifies SHA256 checksums, and installs updates.
+- Config hot reload: reloads the config file and refreshes the UI when external edits are detected.
+- Error prompts: startup failures, service exits, and config read/write failures are shown in dialogs with quick log access.
+- Localization: app text follows the system language, with English as the default and Chinese for `zh-*` system languages.
+
+## Run
 
 ```bash
 swift run MacServerDashboard
 ```
 
-首次运行会创建配置文件：
+On first launch, the dashboard creates this config file:
 
 ```text
 ~/Library/Application Support/MacServerDashboard/config.json
 ```
 
-也可以参考仓库里的 `config.sample.json`。
+You can also use `config.sample.json` as a reference.
 
-## 构建 Release
+## Build a Release Package
 
 ```bash
-scripts/package-release.sh v0.1.5
+scripts/package-release.sh v0.1.8
 ```
 
-生成的安装包在：
+The installer is generated at:
 
 ```text
-dist/MacServerDashboard-v0.1.5-macos-<arch>.dmg
+dist/MacServerDashboard-v0.1.8-macos-<arch>.dmg
 ```
 
-打开 DMG 后，将 `MacServerDashboard.app` 拖到 `Applications`。
+Open the DMG and drag `MacServerDashboard.app` into `Applications`.
 
-当前发布包会做 ad-hoc codesign，避免 macOS 将 app bundle 识别为损坏。若需要完全消除 Gatekeeper 提示，需要使用 Apple Developer ID 证书签名并 notarize。
+Release packages are ad-hoc codesigned so macOS does not treat the app bundle as damaged. To fully remove Gatekeeper prompts, sign with an Apple Developer ID certificate and notarize the app.
 
-## 发布 GitHub Release
+## Publish a GitHub Release
 
-发布采用 tag 触发 GitHub Actions 的方式：本地只创建并推送版本 tag，GitHub Actions 在 macOS runner 上构建包、生成 SHA256 校验文件，并用 GitHub CLI 创建 Release 和上传资产。
+Releases are tag-driven: locally, create and push a version tag; GitHub Actions builds on a macOS runner, generates SHA256 checksums, creates the Release with GitHub CLI, and uploads the assets.
 
-1. 更新 `Sources/MacServerDashboard/AppVersion.swift` 里的 `AppVersion.current`。
-2. 确认工作区干净并提交所有变更。
-3. 创建并推送版本 tag：
+1. Update `AppVersion.current` in `Sources/MacServerDashboard/AppVersion.swift`.
+2. Commit all changes and make sure the working tree is clean.
+3. Create and push the version tag:
 
 ```bash
-scripts/release.sh v0.1.0
+scripts/release.sh v0.1.8
 ```
 
-4. GitHub Actions 会生成并上传：
+4. GitHub Actions uploads:
 
 ```text
-MacServerDashboard-v0.1.0-macos-<arch>.dmg
-MacServerDashboard-v0.1.0-checksums.txt
+MacServerDashboard-v0.1.8-macos-<arch>.dmg
+MacServerDashboard-v0.1.8-checksums.txt
 ```
 
-也可以只在本机打包验证：
+You can also build locally only for verification:
 
 ```bash
-scripts/package-release.sh v0.1.0
+scripts/package-release.sh v0.1.8
 ```
 
-生成的文件会放在 `dist/`。应用内置更新可以读取 GitHub latest release，选择 `MacServerDashboard-*-macos-*.dmg` 资产下载，并用同版本 `checksums.txt` 校验 SHA256。
+Generated files are placed in `dist/`. The in-app updater reads the latest GitHub Release, downloads the matching `MacServerDashboard-*-macos-*.dmg` asset, and verifies it with the release `checksums.txt`.
 
-## 应用内更新
+## In-App Updates
 
-右上角菜单里点击“检查更新”，dashboard 会读取 GitHub latest release。发现新版本后，用户确认安装即可自动下载当前架构的 DMG、校验 SHA256，并替换当前 `MacServerDashboard.app`。安装过程会显示进度，安装完成后 dashboard 会自动重启。
+Use the top-right menu and choose "Check for Updates". The dashboard reads the latest GitHub Release. If a newer version is available, the user can install it; the dashboard downloads the current-architecture DMG, verifies SHA256, replaces the current `MacServerDashboard.app`, shows progress, and restarts automatically.
 
-## 安装开机自启
+## Install Login Item
 
-可以在 dashboard 右上角点击闪电图标安装，也可以运行：
+You can install the login item from the top-right dashboard menu, or run:
 
 ```bash
 chmod +x scripts/install-launch-agent.sh scripts/uninstall-launch-agent.sh
 scripts/install-launch-agent.sh
 ```
 
-卸载：
+Uninstall:
 
 ```bash
 scripts/uninstall-launch-agent.sh
 ```
 
-## 配置本机服务
+## Configure Local Services
 
-点击“本机容器服务”分组右侧的加号，可以在 GUI 中新增服务。表单里的“监控端口（可选）”只用于连通性检测和备注，不会改变启动命令。`localServices` 也可以手动声明需要展示和可自启动的本机服务：
+Click the plus button beside the "Local services" group to add a service in the GUI. The "Monitored ports (optional)" fields are only used for connectivity checks and notes; they do not change the start command. You can also declare local services manually in `localServices`:
 
 ```json
 {
@@ -104,7 +109,7 @@ scripts/uninstall-launch-agent.sh
   "command": "npm run dev -- --host 0.0.0.0 --port 3000",
   "workingDirectory": "~/Sites/homepage",
   "autoStart": true,
-  "note": "本机 Node 服务",
+  "note": "Local Node service",
   "ports": [
     {
       "host": "127.0.0.1",
@@ -116,37 +121,37 @@ scripts/uninstall-launch-agent.sh
 }
 ```
 
-服务自身 `autoStart` 为 `true` 时，dashboard 启动会执行对应命令。服务输出写入：
+When a service has `autoStart` set to `true`, the dashboard runs its command on launch. Service output is written to:
 
 ```text
 ~/Library/Logs/MacServerDashboard/
 ```
 
-服务启动时会优先解析 NVM Node 路径：先使用服务工作目录下的 `.nvmrc`，其次使用 `~/.nvm/alias/default`，最后使用已安装的最高 Node 版本，并只把选中的 `~/.nvm/versions/node/<version>/bin` 放进 `PATH`。同时会补充 `~/.bun/bin`、`~/.local/bin`、`~/.cargo/bin`、Docker Desktop CLI 路径，避免 macOS GUI 启动环境找不到 Node、Bun、Docker、`lark-cli` 等工具。
+When launching services, the dashboard resolves NVM Node paths in this order: the service working directory `.nvmrc`, then `~/.nvm/alias/default`, then the highest installed Node version. It adds only the selected `~/.nvm/versions/node/<version>/bin` to `PATH`. It also adds common paths such as `~/.bun/bin`, `~/.local/bin`, `~/.cargo/bin`, and Docker Desktop CLI paths, so GUI-launched services can find tools such as Node, Bun, Docker, and `lark-cli`.
 
-Python/FastAPI 服务会额外优先使用工作目录下的 `.venv/bin` 或 `venv/bin`，也会补充 `~/.pyenv/shims`、`~/.asdf/shims`、`~/Library/Python/*/bin` 等常见路径。如果仍提示 `uvicorn: command not found`，建议把命令写成 `./.venv/bin/uvicorn ...` 或 `python -m uvicorn ...`。
+Python/FastAPI services also prefer `.venv/bin` or `venv/bin` in the working directory, plus common paths such as `~/.pyenv/shims`, `~/.asdf/shims`, and `~/Library/Python/*/bin`. If `uvicorn: command not found` still appears, use `./.venv/bin/uvicorn ...` or `python -m uvicorn ...`.
 
-## 日志
+## Logs
 
-App 自身日志写入：
+The app log is written to:
 
 ```text
 ~/Library/Logs/MacServerDashboard/app.log
 ```
 
-本机服务日志也在同一目录。右上角菜单可以打开日志目录或直接打开 App 日志。
+Local service logs are stored in the same folder. The top-right menu can open the logs folder or the app log directly.
 
-如果启动失败日志显示配置端口已被占用，dashboard 会只针对该服务配置的监控端口查找监听进程，先发送 `TERM`，端口仍未释放时再发送 `KILL`，然后重试启动一次。
+If a startup log shows that a configured port is already in use, the dashboard only checks the monitored ports configured for that service. It sends `TERM` to the listener process, sends `KILL` if the port is still occupied, then retries the service start once.
 
-## Docker 端口备注
+## Docker Port Notes
 
-Docker 容器端口的备注会写入 `portNotes`，key 格式是：
+Docker container port notes are stored in `portNotes`. Keys use this format:
 
 ```text
 host:port/protocol
 ```
 
-例如：
+Example:
 
 ```json
 {
