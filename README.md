@@ -34,13 +34,13 @@ swift run MacServerDashboard
 ## 构建 Release
 
 ```bash
-scripts/package-release.sh v0.1.3
+scripts/package-release.sh v0.1.4
 ```
 
 生成的安装包在：
 
 ```text
-dist/MacServerDashboard-v0.1.3-macos-<arch>.dmg
+dist/MacServerDashboard-v0.1.4-macos-<arch>.dmg
 ```
 
 打开 DMG 后，将 `MacServerDashboard.app` 拖到 `Applications`。
@@ -123,6 +123,8 @@ scripts/uninstall-launch-agent.sh
 ```
 
 服务启动时会优先把 `~/.bun/bin`、`~/.local/bin`、`~/.cargo/bin` 放进 `PATH`，避免 macOS GUI 启动环境找不到 Bun、Node 等用户目录里的工具。
+
+Python/FastAPI 服务会额外优先使用工作目录下的 `.venv/bin` 或 `venv/bin`，也会补充 `~/.pyenv/shims`、`~/.asdf/shims`、`~/Library/Python/*/bin` 等常见路径。如果仍提示 `uvicorn: command not found`，建议把命令写成 `./.venv/bin/uvicorn ...` 或 `python -m uvicorn ...`。
 
 如果启动失败日志显示配置端口已被占用，dashboard 会只针对该服务配置的监控端口查找监听进程，先发送 `TERM`，端口仍未释放时再发送 `KILL`，然后重试启动一次。
 

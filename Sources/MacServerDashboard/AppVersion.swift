@@ -1,7 +1,7 @@
 import Foundation
 
 enum AppVersion {
-    static let current = "0.1.3"
+    static let current = "0.1.4"
 
     static var currentTag: String {
         "v\(current)"

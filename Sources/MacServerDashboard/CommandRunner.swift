@@ -55,9 +55,10 @@ enum CommandRunner {
         terminationHandler: (@Sendable (Process) -> Void)? = nil
     ) throws -> Process {
         let process = Process()
+        let environment = mergedEnvironment(workingDirectory: workingDirectory)
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        process.arguments = ["-c", command]
-        process.environment = mergedEnvironment()
+        process.arguments = ["-lc", serviceCommand(command, environment: environment)]
+        process.environment = environment
         process.terminationHandler = terminationHandler
 
         if let workingDirectory, !workingDirectory.isEmpty {
@@ -160,12 +161,23 @@ enum CommandRunner {
         return await run("kill -\(signal) \(numericPID)", timeout: 2)
     }
 
-    private static func mergedEnvironment() -> [String: String] {
+    private static func serviceCommand(_ command: String, environment: [String: String]) -> String {
+        let path = environment["PATH"] ?? defaultPath
+        return "export PATH=\(shellEscaped(path)):$PATH\n\(command)"
+    }
+
+    private static func mergedEnvironment(workingDirectory: String? = nil) -> [String: String] {
         var environment = ProcessInfo.processInfo.environment
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         environment["BUN_INSTALL"] = environment["BUN_INSTALL"] ?? "\(home)/.bun"
 
-        let preferredPaths = [
+        var preferredPaths = pythonVirtualEnvPaths(workingDirectory: workingDirectory)
+        preferredPaths.append(contentsOf: [
+            "\(home)/.pyenv/shims",
+            "\(home)/.asdf/shims",
+            "\(home)/.rye/shims",
+            "\(home)/.pixi/bin",
+            "\(home)/.poetry/bin",
             "\(home)/.bun/bin",
             "\(home)/.local/bin",
             "\(home)/.cargo/bin",
@@ -176,12 +188,42 @@ enum CommandRunner {
             "/bin",
             "/usr/sbin",
             "/sbin"
-        ]
+        ])
+        preferredPaths.append(contentsOf: pythonUserInstallPaths(home: home))
+
         let currentPaths = (environment["PATH"] ?? "")
             .split(separator: ":")
             .map(String.init)
         environment["PATH"] = deduplicatedPath(preferredPaths + currentPaths).joined(separator: ":")
         return environment
+    }
+
+    private static func pythonVirtualEnvPaths(workingDirectory: String?) -> [String] {
+        guard let workingDirectory, !workingDirectory.isEmpty else {
+            return []
+        }
+
+        let expandedWorkingDirectory = expandingTilde(workingDirectory)
+        return [
+            "\(expandedWorkingDirectory)/.venv/bin",
+            "\(expandedWorkingDirectory)/venv/bin"
+        ]
+    }
+
+    private static func pythonUserInstallPaths(home: String) -> [String] {
+        let pythonRoot = URL(fileURLWithPath: home)
+            .appendingPathComponent("Library/Python", isDirectory: true)
+        guard let versions = try? FileManager.default.contentsOfDirectory(
+            at: pythonRoot,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+
+        return versions
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedDescending }
+            .map { $0.appendingPathComponent("bin", isDirectory: true).path }
     }
 
     private static func deduplicatedPath(_ paths: [String]) -> [String] {
