@@ -14,8 +14,8 @@ struct ContentView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
                         SystemStatusView(status: store.systemStatus)
-                        ServiceGroupView(title: ServiceKind.local.rawValue, services: store.localServices, store: store)
-                        ServiceGroupView(title: ServiceKind.docker.rawValue, services: store.dockerServices, store: store)
+                        ServiceGroupView(kind: .local, services: store.localServices, store: store)
+                        ServiceGroupView(kind: .docker, services: store.dockerServices, store: store)
                     }
                     .padding(14)
                 }
@@ -33,27 +33,27 @@ struct ContentView: View {
                 return Alert(
                     title: Text(alert.title),
                     message: Text(alert.message),
-                    primaryButton: .default(Text("打开日志")) {
+                    primaryButton: .default(Text(AppText.t("Open Log", zh: "打开日志"))) {
                         store.openLocalServiceLog(serviceID: logServiceID)
                     },
-                    secondaryButton: .cancel(Text("知道了"))
+                    secondaryButton: .cancel(Text(AppText.t("OK", zh: "知道了")))
                 )
             }
 
             return Alert(
                 title: Text(alert.title),
                 message: Text(alert.message),
-                dismissButton: .default(Text("知道了"))
+                dismissButton: .default(Text(AppText.t("OK", zh: "知道了")))
             )
         }
         .alert(item: $store.updatePrompt) { prompt in
             Alert(
-                title: Text("发现新版本 \(prompt.tagName)"),
-                message: Text("当前版本 \(AppVersion.current)，可安装 \(prompt.archiveName)。安装完成后 dashboard 会自动重启。"),
-                primaryButton: .default(Text("安装更新")) {
+                title: Text(AppText.t("New Version Available \(prompt.tagName)", zh: "发现新版本 \(prompt.tagName)")),
+                message: Text(AppText.t("Current version is \(AppVersion.current). \(prompt.archiveName) is available. The dashboard will restart automatically after installation.", zh: "当前版本 \(AppVersion.current)，可安装 \(prompt.archiveName)。安装完成后 dashboard 会自动重启。")),
+                primaryButton: .default(Text(AppText.t("Install Update", zh: "安装更新"))) {
                     store.installAvailableUpdate()
                 },
-                secondaryButton: .cancel(Text("稍后"))
+                secondaryButton: .cancel(Text(AppText.t("Later", zh: "稍后")))
             )
         }
         .task {
@@ -192,37 +192,40 @@ private struct HeaderView: View {
                         .frame(width: toolButtonSize, height: toolButtonSize)
                 }
                 .buttonStyle(.borderless)
-                .help("刷新状态")
+                .help(AppText.t("Refresh status", zh: "刷新状态"))
 
                 Menu {
                     Button {
                         store.toggleLaunchAgent()
                     } label: {
-                        Label(store.launchAgentInstalled ? "移除开机自启" : "安装开机自启", systemImage: "bolt.fill")
+                        Label(
+                            store.launchAgentInstalled ? AppText.t("Remove Login Item", zh: "移除开机自启") : AppText.t("Install Login Item", zh: "安装开机自启"),
+                            systemImage: "bolt.fill"
+                        )
                     }
 
                     Button {
                         store.openConfigFile()
                     } label: {
-                        Label("打开配置", systemImage: "doc.text")
+                        Label(AppText.t("Open Config", zh: "打开配置"), systemImage: "doc.text")
                     }
 
                     Button {
                         store.revealLogs()
                     } label: {
-                        Label("打开日志目录", systemImage: "terminal")
+                        Label(AppText.t("Open Logs Folder", zh: "打开日志目录"), systemImage: "terminal")
                     }
 
                     Button {
                         store.openAppLog()
                     } label: {
-                        Label("打开 App 日志", systemImage: "doc.text.magnifyingglass")
+                        Label(AppText.t("Open App Log", zh: "打开 App 日志"), systemImage: "doc.text.magnifyingglass")
                     }
 
                     Button {
                         store.checkForUpdates()
                     } label: {
-                        Label("检查更新", systemImage: "arrow.down.circle")
+                        Label(AppText.t("Check for Updates", zh: "检查更新"), systemImage: "arrow.down.circle")
                     }
 
                     Divider()
@@ -230,7 +233,7 @@ private struct HeaderView: View {
                     Button {
                         NSApplication.shared.terminate(nil)
                     } label: {
-                        Label("退出", systemImage: "power")
+                        Label(AppText.t("Quit", zh: "退出"), systemImage: "power")
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle")
@@ -239,11 +242,11 @@ private struct HeaderView: View {
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
-                .help("更多操作")
+                .help(AppText.t("More actions", zh: "更多操作"))
             }
 
             HStack(spacing: 8) {
-                Toggle("贴桌面", isOn: Binding(
+                Toggle(AppText.t("Pin to desktop", zh: "贴桌面"), isOn: Binding(
                     get: { store.config.desktopPinned },
                     set: { store.setDesktopPinned($0) }
                 ))
@@ -255,7 +258,7 @@ private struct HeaderView: View {
     }
 
     private var statusLine: String {
-        let updated = store.lastUpdated.map { Self.dateFormatter.string(from: $0) } ?? "尚未刷新"
+        let updated = store.lastUpdated.map { Self.dateFormatter.string(from: $0) } ?? AppText.t("Not refreshed", zh: "尚未刷新")
         return "\(store.message) · v\(AppVersion.current) · \(updated)"
     }
 
@@ -276,7 +279,7 @@ private struct SystemStatusView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("本机状态")
+                Text(AppText.t("System Status", zh: "本机状态"))
                     .font(.subheadline)
                     .fontWeight(.semibold)
                 Spacer()
@@ -284,7 +287,7 @@ private struct SystemStatusView: View {
 
             LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
                 SystemMetricTile(
-                    title: "存储",
+                    title: AppText.t("Storage", zh: "存储"),
                     value: bytePair(used: status.storageUsedBytes, total: status.storageTotalBytes),
                     detail: percentDetail(used: status.storageUsedBytes, total: status.storageTotalBytes),
                     symbolName: "internaldrive"
@@ -292,17 +295,17 @@ private struct SystemStatusView: View {
                 SystemMetricTile(
                     title: "CPU",
                     value: percentValue(status.cpuUsagePercent),
-                    detail: "当前占用",
+                    detail: AppText.t("Current usage", zh: "当前占用"),
                     symbolName: "cpu"
                 )
                 SystemMetricTile(
-                    title: "内存",
+                    title: AppText.t("Memory", zh: "内存"),
                     value: bytePair(used: status.memoryUsedBytes, total: status.memoryTotalBytes),
                     detail: percentDetail(used: status.memoryUsedBytes, total: status.memoryTotalBytes),
                     symbolName: "memorychip"
                 )
                 SystemMetricTile(
-                    title: "网络",
+                    title: AppText.t("Network", zh: "网络"),
                     value: networkValue(status.networkReachable),
                     detail: networkDetail(status.networkReachable),
                     symbolName: "network"
@@ -313,38 +316,38 @@ private struct SystemStatusView: View {
 
     private func bytePair(used: UInt64?, total: UInt64?) -> String {
         guard let used, let total, total > 0 else {
-            return "不可用"
+            return AppText.t("Unavailable", zh: "不可用")
         }
         return "\(formatBytes(used)) / \(formatBytes(total))"
     }
 
     private func percentDetail(used: UInt64?, total: UInt64?) -> String {
         guard let used, let total, total > 0 else {
-            return "已用 --"
+            return AppText.t("Used --", zh: "已用 --")
         }
         let percent = (Double(used) / Double(total)) * 100
-        return "已用 \(formatPercent(percent))"
+        return AppText.t("Used \(formatPercent(percent))", zh: "已用 \(formatPercent(percent))")
     }
 
     private func percentValue(_ value: Double?) -> String {
         guard let value else {
-            return "不可用"
+            return AppText.t("Unavailable", zh: "不可用")
         }
         return formatPercent(value)
     }
 
     private func networkValue(_ value: Bool?) -> String {
         guard let value else {
-            return "不可用"
+            return AppText.t("Unavailable", zh: "不可用")
         }
-        return value ? "可连接" : "不可连接"
+        return value ? AppText.t("Reachable", zh: "可连接") : AppText.t("Unreachable", zh: "不可连接")
     }
 
     private func networkDetail(_ value: Bool?) -> String {
         guard value != nil else {
-            return "探测不可用"
+            return AppText.t("Probe unavailable", zh: "探测不可用")
         }
-        return "外网连通性"
+        return AppText.t("Internet connectivity", zh: "外网连通性")
     }
 
     private func formatPercent(_ value: Double) -> String {
@@ -405,7 +408,7 @@ private struct SystemMetricTile: View {
 }
 
 private struct ServiceGroupView: View {
-    var title: String
+    var kind: ServiceKind
     var services: [ServiceSnapshot]
     @ObservedObject var store: DashboardStore
     @State private var showingLocalServiceEditor = false
@@ -413,7 +416,7 @@ private struct ServiceGroupView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(title)
+                Text(kind.displayName)
                     .font(.subheadline)
                     .fontWeight(.semibold)
                 Text("\(services.count)")
@@ -421,19 +424,19 @@ private struct ServiceGroupView: View {
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
                 Spacer()
-                if title == ServiceKind.local.rawValue {
+                if kind == .local {
                     Button {
                         showingLocalServiceEditor = true
                     } label: {
                         Image(systemName: "plus")
                     }
                     .buttonStyle(.borderless)
-                    .help("新增本机服务")
+                    .help(AppText.t("Add local service", zh: "新增本机服务"))
                 }
             }
 
             if services.isEmpty {
-                EmptyGroupHint(title: title)
+                EmptyGroupHint(title: kind.displayName)
             } else {
                 VStack(spacing: 8) {
                     ForEach(services) { service in
@@ -455,7 +458,7 @@ private struct EmptyGroupHint: View {
         HStack(spacing: 8) {
             Image(systemName: "tray")
                 .foregroundStyle(.secondary)
-            Text("暂无\(title)")
+            Text(AppText.t("No \(title)", zh: "暂无\(title)"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
@@ -482,11 +485,11 @@ private struct ServiceRow: View {
         .padding(10)
         .background(.thinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .confirmationDialog("删除本机服务？", isPresented: $showingDeleteConfirmation) {
-            Button("删除", role: .destructive) {
+        .confirmationDialog(AppText.t("Delete local service?", zh: "删除本机服务？"), isPresented: $showingDeleteConfirmation) {
+            Button(AppText.t("Delete", zh: "删除"), role: .destructive) {
                 store.removeLocalService(serviceID: service.id)
             }
-            Button("取消", role: .cancel) {}
+            Button(AppText.t("Cancel", zh: "取消"), role: .cancel) {}
         }
         .sheet(item: $editingService) { service in
             LocalServiceEditorView(store: store, service: service)
@@ -529,7 +532,7 @@ private struct ServiceRow: View {
                     .font(.callout)
                     .fontWeight(.medium)
                     .lineLimit(1)
-                Text(service.state.rawValue)
+                Text(service.state.displayName)
                     .font(.caption)
                     .foregroundStyle(service.state.tint)
             }
@@ -552,7 +555,7 @@ private struct ServiceRow: View {
                         .fontWeight(.medium)
                         .lineLimit(1)
                     Spacer()
-                    Text(service.state.rawValue)
+                    Text(service.state.displayName)
                         .font(.caption)
                         .foregroundStyle(service.state.tint)
                 }
@@ -569,7 +572,7 @@ private struct ServiceRow: View {
                     Image(systemName: "stop.fill")
                 }
                 .buttonStyle(.borderless)
-                .help("停止")
+                .help(AppText.t("Stop", zh: "停止"))
             } else {
                 Button {
                     store.startLocalService(serviceID: service.id)
@@ -577,7 +580,7 @@ private struct ServiceRow: View {
                     Image(systemName: "play.fill")
                 }
                 .buttonStyle(.borderless)
-                .help("启动")
+                .help(AppText.t("Start", zh: "启动"))
             }
 
             Button {
@@ -586,7 +589,7 @@ private struct ServiceRow: View {
                 Image(systemName: "pencil")
             }
             .buttonStyle(.borderless)
-            .help("编辑")
+            .help(AppText.t("Edit", zh: "编辑"))
 
             Button {
                 showingDeleteConfirmation = true
@@ -595,7 +598,7 @@ private struct ServiceRow: View {
             }
             .buttonStyle(.borderless)
             .foregroundStyle(.red)
-            .help("删除")
+            .help(AppText.t("Delete", zh: "删除"))
 
             Button {
                 viewingLogService = store.localServiceConfig(serviceID: service.id)
@@ -603,7 +606,7 @@ private struct ServiceRow: View {
                 Image(systemName: "doc.text.magnifyingglass")
             }
             .buttonStyle(.borderless)
-            .help("查看日志")
+            .help(AppText.t("View logs", zh: "查看日志"))
         }
     }
 
@@ -639,11 +642,11 @@ private struct PortRow: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                Text(snapshot.ownerKind.rawValue)
+                Text(snapshot.ownerKind.displayName)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
-            TextField("备注", text: Binding(
+            TextField(AppText.t("Note", zh: "备注"), text: Binding(
                 get: { snapshot.note },
                 set: { store.setPortNote(snapshot, note: $0) }
             ))
@@ -665,7 +668,7 @@ private struct LocalServiceLogView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(service.name) 日志")
+                    Text(AppText.t("\(service.name) Logs", zh: "\(service.name) 日志"))
                         .font(.headline)
                     Text(service.id)
                         .font(.caption)
@@ -678,7 +681,7 @@ private struct LocalServiceLogView: View {
                     Image(systemName: "arrow.clockwise")
                 }
                 .buttonStyle(.borderless)
-                .help("刷新日志")
+                .help(AppText.t("Refresh logs", zh: "刷新日志"))
 
                 Button {
                     store.openLocalServiceLog(serviceID: service.id)
@@ -686,9 +689,9 @@ private struct LocalServiceLogView: View {
                     Image(systemName: "arrow.up.forward.square")
                 }
                 .buttonStyle(.borderless)
-                .help("打开日志文件")
+                .help(AppText.t("Open log file", zh: "打开日志文件"))
 
-                Button("关闭") {
+                Button(AppText.t("Close", zh: "关闭")) {
                     dismiss()
                 }
             }
@@ -696,7 +699,7 @@ private struct LocalServiceLogView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
-                        Text(logText.isEmpty ? "暂无日志" : logText)
+                        Text(logText.isEmpty ? AppText.t("No logs yet", zh: "暂无日志") : logText)
                             .font(.system(.caption, design: .monospaced))
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -762,28 +765,28 @@ private struct LocalServiceEditorView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text(service == nil ? "新增本机容器服务" : "编辑本机容器服务")
+                Text(service == nil ? AppText.t("Add Local Service", zh: "新增本机容器服务") : AppText.t("Edit Local Service", zh: "编辑本机容器服务"))
                     .font(.headline)
                 Spacer()
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                TextField("名称", text: $name)
+                TextField(AppText.t("Name", zh: "名称"), text: $name)
                     .textFieldStyle(.roundedBorder)
-                TextField("启动命令", text: $command)
+                TextField(AppText.t("Start command", zh: "启动命令"), text: $command)
                     .textFieldStyle(.roundedBorder)
-                TextField("工作目录", text: $workingDirectory)
+                TextField(AppText.t("Working directory", zh: "工作目录"), text: $workingDirectory)
                     .textFieldStyle(.roundedBorder)
-                TextField("服务备注", text: $note)
+                TextField(AppText.t("Service note", zh: "服务备注"), text: $note)
                     .textFieldStyle(.roundedBorder)
-                Toggle("随 dashboard 启动", isOn: $autoStart)
+                Toggle(AppText.t("Start with dashboard", zh: "随 dashboard 启动"), isOn: $autoStart)
                     .toggleStyle(.checkbox)
                     .font(.caption)
             }
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("监控端口（可选）")
+                    Text(AppText.t("Monitored ports (optional)", zh: "监控端口（可选）"))
                         .font(.subheadline)
                         .fontWeight(.semibold)
                     Spacer()
@@ -793,18 +796,18 @@ private struct LocalServiceEditorView: View {
                         Image(systemName: "plus")
                     }
                     .buttonStyle(.borderless)
-                    .help("添加监控端口")
+                    .help(AppText.t("Add monitored port", zh: "添加监控端口"))
                 }
 
                 ForEach($ports) { $port in
                     HStack(spacing: 8) {
-                        TextField("检测 Host", text: $port.host)
+                        TextField(AppText.t("Probe Host", zh: "检测 Host"), text: $port.host)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 120)
-                        TextField("检测 Port", text: $port.port)
+                        TextField(AppText.t("Probe Port", zh: "检测 Port"), text: $port.port)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 70)
-                        TextField("备注", text: $port.note)
+                        TextField(AppText.t("Note", zh: "备注"), text: $port.note)
                             .textFieldStyle(.roundedBorder)
                         Button {
                             removePortDraft(port.id)
@@ -813,7 +816,7 @@ private struct LocalServiceEditorView: View {
                         }
                         .buttonStyle(.borderless)
                         .disabled(ports.count == 1)
-                        .help("删除监控端口")
+                        .help(AppText.t("Remove monitored port", zh: "删除监控端口"))
                     }
                     .font(.caption)
                 }
@@ -821,10 +824,10 @@ private struct LocalServiceEditorView: View {
 
             HStack {
                 Spacer()
-                Button("取消") {
+                Button(AppText.t("Cancel", zh: "取消")) {
                     dismiss()
                 }
-                Button("保存") {
+                Button(AppText.t("Save", zh: "保存")) {
                     save()
                 }
                 .keyboardShortcut(.defaultAction)

@@ -9,7 +9,7 @@ final class DashboardStore: ObservableObject {
     @Published private(set) var dockerServices: [ServiceSnapshot] = []
     @Published private(set) var systemStatus = SystemStatusSnapshot.placeholder
     @Published private(set) var lastUpdated: Date?
-    @Published private(set) var message = "正在初始化"
+    @Published private(set) var message = AppText.t("Initializing", zh: "正在初始化")
     @Published private(set) var launchAgentInstalled = LaunchAgentManager.isInstalled
     @Published private(set) var localServiceRuntimeMessages: [String: String] = [:]
     @Published var activeAlert: DashboardAlert?
@@ -67,7 +67,7 @@ final class DashboardStore: ObservableObject {
 
         let refreshConfigVersion = configVersion
         isRefreshing = true
-        message = "正在刷新"
+        message = AppText.t("Refreshing", zh: "正在刷新")
         AppLogger.info("Refresh started configVersion=\(refreshConfigVersion)")
         loadConfig()
         let currentConfig = config
@@ -92,7 +92,7 @@ final class DashboardStore: ObservableObject {
         dockerServices = dockerSnapshots
         systemStatus = status
         lastUpdated = Date()
-        message = "已刷新"
+        message = AppText.t("Refreshed", zh: "已刷新")
         AppLogger.info(
             "Refresh completed local=\(localSnapshots.count) docker=\(dockerSnapshots.count) " +
                 "storage=\(status.storageUsedBytes != nil) cpu=\(status.cpuUsagePercent != nil) memory=\(status.memoryUsedBytes != nil) network=\(status.networkReachable.map { String($0) } ?? "unknown")"
@@ -113,7 +113,7 @@ final class DashboardStore: ObservableObject {
 
         isCheckingForUpdates = true
         updateProgress = nil
-        message = "正在检查更新"
+        message = AppText.t("Checking for updates", zh: "正在检查更新")
         AppLogger.info("Checking for updates")
         Task {
             do {
@@ -121,14 +121,17 @@ final class DashboardStore: ObservableObject {
                 isCheckingForUpdates = false
 
                 guard let update else {
-                    message = "已是最新版本"
+                    message = AppText.t("Already up to date", zh: "已是最新版本")
                     AppLogger.info("No update available current=\(AppVersion.current)")
-                    showError(title: "已是最新版本", message: "当前版本 \(AppVersion.current) 已是最新版本。")
+                    showError(
+                        title: AppText.t("Already Up to Date", zh: "已是最新版本"),
+                        message: AppText.t("Current version \(AppVersion.current) is already the latest version.", zh: "当前版本 \(AppVersion.current) 已是最新版本。")
+                    )
                     return
                 }
 
                 availableUpdate = update
-                message = "发现新版本 \(update.tagName)"
+                message = AppText.t("New version found \(update.tagName)", zh: "发现新版本 \(update.tagName)")
                 AppLogger.info("Update available tag=\(update.tagName) asset=\(update.archiveName)")
                 updatePrompt = UpdatePrompt(
                     tagName: update.tagName,
@@ -137,9 +140,9 @@ final class DashboardStore: ObservableObject {
                 )
             } catch {
                 isCheckingForUpdates = false
-                message = "检查更新失败"
+                message = AppText.t("Check for updates failed", zh: "检查更新失败")
                 AppLogger.error("Check update failed: \(error.localizedDescription)")
-                showError(title: "检查更新失败", message: error.localizedDescription)
+                showError(title: AppText.t("Check for Updates Failed", zh: "检查更新失败"), message: error.localizedDescription)
             }
         }
     }
@@ -150,15 +153,19 @@ final class DashboardStore: ObservableObject {
         }
 
         isInstallingUpdate = true
-        message = "正在安装 \(update.tagName)"
-        updateProgress = UpdateProgressState(title: "正在安装 \(update.tagName)", detail: "准备下载更新", fraction: 0.02)
+        message = AppText.t("Installing \(update.tagName)", zh: "正在安装 \(update.tagName)")
+        updateProgress = UpdateProgressState(
+            title: AppText.t("Installing \(update.tagName)", zh: "正在安装 \(update.tagName)"),
+            detail: AppText.t("Preparing to download update", zh: "准备下载更新"),
+            fraction: 0.02
+        )
         AppLogger.info("Installing update tag=\(update.tagName) asset=\(update.archiveName)")
         Task {
             do {
                 let installedURL = try await UpdateManager.install(update) { [weak self] progress in
                     Task { @MainActor [weak self] in
                         self?.updateProgress = UpdateProgressState(
-                            title: "正在安装 \(update.tagName)",
+                            title: AppText.t("Installing \(update.tagName)", zh: "正在安装 \(update.tagName)"),
                             detail: progress.detail,
                             fraction: progress.fraction
                         )
@@ -167,28 +174,32 @@ final class DashboardStore: ObservableObject {
                 }
                 isInstallingUpdate = false
                 availableUpdate = nil
-                message = "已安装 \(update.tagName)，正在重启"
-                updateProgress = UpdateProgressState(title: "正在安装 \(update.tagName)", detail: "正在重启 dashboard", fraction: 0.98)
+                message = AppText.t("Installed \(update.tagName), restarting", zh: "已安装 \(update.tagName)，正在重启")
+                updateProgress = UpdateProgressState(
+                    title: AppText.t("Installing \(update.tagName)", zh: "正在安装 \(update.tagName)"),
+                    detail: AppText.t("Restarting dashboard", zh: "正在重启 dashboard"),
+                    fraction: 0.98
+                )
                 AppLogger.info("Update installed tag=\(update.tagName) executable=\(installedURL.path)")
                 do {
                     try UpdateManager.relaunch(from: installedURL)
                     try? await Task.sleep(nanoseconds: 700_000_000)
                     NSApplication.shared.terminate(nil)
                 } catch {
-                    message = "已安装 \(update.tagName)"
+                    message = AppText.t("Installed \(update.tagName)", zh: "已安装 \(update.tagName)")
                     updateProgress = nil
                     AppLogger.error("Relaunch failed after update tag=\(update.tagName): \(error.localizedDescription)")
                     showError(
-                        title: "更新已安装",
-                        message: "已安装 \(update.tagName)，但自动重启失败：\(error.localizedDescription)\n\n请手动重新打开：\(installedURL.path)"
+                        title: AppText.t("Update Installed", zh: "更新已安装"),
+                        message: AppText.t("Installed \(update.tagName), but automatic restart failed: \(error.localizedDescription)\n\nPlease reopen manually: \(installedURL.path)", zh: "已安装 \(update.tagName)，但自动重启失败：\(error.localizedDescription)\n\n请手动重新打开：\(installedURL.path)")
                     )
                 }
             } catch {
                 isInstallingUpdate = false
                 updateProgress = nil
-                message = "安装更新失败"
+                message = AppText.t("Install update failed", zh: "安装更新失败")
                 AppLogger.error("Install update failed tag=\(update.tagName): \(error.localizedDescription)")
-                showError(title: "安装更新失败", message: error.localizedDescription)
+                showError(title: AppText.t("Install Update Failed", zh: "安装更新失败"), message: error.localizedDescription)
             }
         }
     }
@@ -207,8 +218,11 @@ final class DashboardStore: ObservableObject {
 
     func openLocalServiceLog(serviceID: String) {
         guard let url = try? CommandRunner.logFileURL(logName: serviceID) else {
-            message = "打开日志失败"
-            showError(title: "打开日志失败", message: "无法创建或打开该服务的日志文件。")
+            message = AppText.t("Open log failed", zh: "打开日志失败")
+            showError(
+                title: AppText.t("Open Log Failed", zh: "打开日志失败"),
+                message: AppText.t("Could not create or open the log file for this service.", zh: "无法创建或打开该服务的日志文件。")
+            )
             return
         }
         NSWorkspace.shared.open(url)
@@ -265,8 +279,11 @@ final class DashboardStore: ObservableObject {
         let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !trimmedName.isEmpty, !trimmedCommand.isEmpty else {
-            message = "名称和命令不能为空"
-            showError(title: "本机服务配置无效", message: "名称和启动命令不能为空。")
+            message = AppText.t("Name and command are required", zh: "名称和命令不能为空")
+            showError(
+                title: AppText.t("Invalid Local Service Config", zh: "本机服务配置无效"),
+                message: AppText.t("Name and start command are required.", zh: "名称和启动命令不能为空。")
+            )
             return false
         }
 
@@ -287,7 +304,7 @@ final class DashboardStore: ObservableObject {
             return false
         }
         applyLocalServicesImmediately(from: nextConfig)
-        message = "已添加 \(trimmedName)"
+        message = AppText.t("Added \(trimmedName)", zh: "已添加 \(trimmedName)")
         Task { await refresh() }
         return true
     }
@@ -307,15 +324,21 @@ final class DashboardStore: ObservableObject {
         let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !trimmedName.isEmpty, !trimmedCommand.isEmpty else {
-            message = "名称和命令不能为空"
-            showError(title: "本机服务配置无效", message: "名称和启动命令不能为空。")
+            message = AppText.t("Name and command are required", zh: "名称和命令不能为空")
+            showError(
+                title: AppText.t("Invalid Local Service Config", zh: "本机服务配置无效"),
+                message: AppText.t("Name and start command are required.", zh: "名称和启动命令不能为空。")
+            )
             return false
         }
 
         var nextConfig = config
         guard let index = nextConfig.localServices.firstIndex(where: { $0.id == serviceID }) else {
-            message = "没有找到要编辑的服务"
-            showError(title: "编辑失败", message: "没有找到要编辑的本机服务。")
+            message = AppText.t("Service to edit was not found", zh: "没有找到要编辑的服务")
+            showError(
+                title: AppText.t("Edit Failed", zh: "编辑失败"),
+                message: AppText.t("Could not find the local service to edit.", zh: "没有找到要编辑的本机服务。")
+            )
             return false
         }
 
@@ -333,7 +356,7 @@ final class DashboardStore: ObservableObject {
             return false
         }
         applyLocalServicesImmediately(from: nextConfig)
-        message = "已更新 \(trimmedName)"
+        message = AppText.t("Updated \(trimmedName)", zh: "已更新 \(trimmedName)")
         Task { await refresh() }
         return true
     }
@@ -341,8 +364,11 @@ final class DashboardStore: ObservableObject {
     func removeLocalService(serviceID: String) {
         var nextConfig = config
         guard let index = nextConfig.localServices.firstIndex(where: { $0.id == serviceID }) else {
-            message = "没有找到要删除的服务"
-            showError(title: "删除失败", message: "没有找到要删除的本机服务。")
+            message = AppText.t("Service to delete was not found", zh: "没有找到要删除的服务")
+            showError(
+                title: AppText.t("Delete Failed", zh: "删除失败"),
+                message: AppText.t("Could not find the local service to delete.", zh: "没有找到要删除的本机服务。")
+            )
             return
         }
 
@@ -353,7 +379,7 @@ final class DashboardStore: ObservableObject {
             return
         }
         applyLocalServicesImmediately(from: nextConfig)
-        message = "已删除 \(name)"
+        message = AppText.t("Deleted \(name)", zh: "已删除 \(name)")
         Task { await refresh() }
     }
 
@@ -367,7 +393,7 @@ final class DashboardStore: ObservableObject {
 
     func stopLocalService(serviceID: String) {
         if stopLocalServiceProcess(serviceID: serviceID) {
-            message = "已停止服务"
+            message = AppText.t("Service stopped", zh: "已停止服务")
             Task { await refresh() }
         }
     }
@@ -404,15 +430,15 @@ final class DashboardStore: ObservableObject {
             do {
                 if LaunchAgentManager.isInstalled {
                     try await LaunchAgentManager.uninstall()
-                    message = "已移除开机自启"
+                    message = AppText.t("Login item removed", zh: "已移除开机自启")
                 } else {
                     try await LaunchAgentManager.install()
-                    message = "已安装开机自启"
+                    message = AppText.t("Login item installed", zh: "已安装开机自启")
                 }
                 launchAgentInstalled = LaunchAgentManager.isInstalled
             } catch {
-                message = "开机自启变更失败：\(error.localizedDescription)"
-                showError(title: "开机自启变更失败", message: error.localizedDescription)
+                message = AppText.t("Login item change failed: \(error.localizedDescription)", zh: "开机自启变更失败：\(error.localizedDescription)")
+                showError(title: AppText.t("Login Item Change Failed", zh: "开机自启变更失败"), message: error.localizedDescription)
             }
         }
     }
@@ -572,8 +598,8 @@ final class DashboardStore: ObservableObject {
             let data = try JSONEncoder.pretty.encode(DashboardConfig())
             try data.write(to: Self.configURL, options: .atomic)
         } catch {
-            message = "创建配置失败：\(error.localizedDescription)"
-            showError(title: "创建配置失败", message: error.localizedDescription)
+            message = AppText.t("Create config failed: \(error.localizedDescription)", zh: "创建配置失败：\(error.localizedDescription)")
+            showError(title: AppText.t("Create Config Failed", zh: "创建配置失败"), message: error.localizedDescription)
         }
     }
 
@@ -661,10 +687,13 @@ final class DashboardStore: ObservableObject {
         } catch {
             let reason = configReadFailureMessage(error)
             configLoadFailureReason = reason
-            message = "读取配置失败：\(reason)"
+            message = AppText.t("Read config failed: \(reason)", zh: "读取配置失败：\(reason)")
             showError(
-                title: "读取配置失败",
-                message: "\(reason)\n\n配置文件：\(Self.configURL.path)\n\n为了避免覆盖原配置，dashboard 已阻止自动保存。请修正配置文件后重新启动。"
+                title: AppText.t("Read Config Failed", zh: "读取配置失败"),
+                message: AppText.t(
+                    "\(reason)\n\nConfig file: \(Self.configURL.path)\n\nTo avoid overwriting the original config, dashboard has blocked automatic saving. Please fix the config file and restart.",
+                    zh: "\(reason)\n\n配置文件：\(Self.configURL.path)\n\n为了避免覆盖原配置，dashboard 已阻止自动保存。请修正配置文件后重新启动。"
+                )
             )
         }
     }
@@ -676,13 +705,13 @@ final class DashboardStore: ObservableObject {
 
         switch decodingError {
         case let .dataCorrupted(context):
-            return "\(context.debugDescription)（位置：\(codingPathDescription(context.codingPath))）"
+            return AppText.t("\(context.debugDescription) (path: \(codingPathDescription(context.codingPath)))", zh: "\(context.debugDescription)（位置：\(codingPathDescription(context.codingPath))）")
         case let .keyNotFound(key, context):
-            return "缺少字段 \(key.stringValue)（位置：\(codingPathDescription(context.codingPath))）"
+            return AppText.t("Missing field \(key.stringValue) (path: \(codingPathDescription(context.codingPath)))", zh: "缺少字段 \(key.stringValue)（位置：\(codingPathDescription(context.codingPath))）")
         case let .typeMismatch(type, context):
-            return "字段类型不匹配，期望 \(type)（位置：\(codingPathDescription(context.codingPath))）"
+            return AppText.t("Field type mismatch, expected \(type) (path: \(codingPathDescription(context.codingPath)))", zh: "字段类型不匹配，期望 \(type)（位置：\(codingPathDescription(context.codingPath))）")
         case let .valueNotFound(type, context):
-            return "字段值缺失，期望 \(type)（位置：\(codingPathDescription(context.codingPath))）"
+            return AppText.t("Missing value, expected \(type) (path: \(codingPathDescription(context.codingPath)))", zh: "字段值缺失，期望 \(type)（位置：\(codingPathDescription(context.codingPath))）")
         @unknown default:
             return decodingError.localizedDescription
         }
@@ -690,7 +719,7 @@ final class DashboardStore: ObservableObject {
 
     private func codingPathDescription(_ path: [CodingKey]) -> String {
         let value = path.map(\.stringValue).joined(separator: ".")
-        return value.isEmpty ? "根节点" : value
+        return value.isEmpty ? AppText.t("root", zh: "根节点") : value
     }
 
     private func runPendingRefreshIfNeeded() {
@@ -705,10 +734,13 @@ final class DashboardStore: ObservableObject {
     @discardableResult
     private func saveConfig(_ nextConfig: DashboardConfig) -> Bool {
         if let configLoadFailureReason {
-            message = "保存被阻止：配置不可读"
+            message = AppText.t("Save blocked: config is unreadable", zh: "保存被阻止：配置不可读")
             showError(
-                title: "保存被阻止",
-                message: "当前配置文件不可读，为避免覆盖原配置，本次保存已取消。\n\n原因：\(configLoadFailureReason)\n\n配置文件：\(Self.configURL.path)"
+                title: AppText.t("Save Blocked", zh: "保存被阻止"),
+                message: AppText.t(
+                    "The current config file is unreadable. To avoid overwriting it, this save has been cancelled.\n\nReason: \(configLoadFailureReason)\n\nConfig file: \(Self.configURL.path)",
+                    zh: "当前配置文件不可读，为避免覆盖原配置，本次保存已取消。\n\n原因：\(configLoadFailureReason)\n\n配置文件：\(Self.configURL.path)"
+                )
             )
             return false
         }
@@ -719,11 +751,11 @@ final class DashboardStore: ObservableObject {
             try data.write(to: Self.configURL, options: .atomic)
             config = nextConfig
             configVersion += 1
-            message = "配置已保存"
+            message = AppText.t("Config saved", zh: "配置已保存")
             return true
         } catch {
-            message = "保存配置失败：\(error.localizedDescription)"
-            showError(title: "保存配置失败", message: error.localizedDescription)
+            message = AppText.t("Save config failed: \(error.localizedDescription)", zh: "保存配置失败：\(error.localizedDescription)")
+            showError(title: AppText.t("Save Config Failed", zh: "保存配置失败"), message: error.localizedDescription)
             return false
         }
     }
@@ -798,18 +830,21 @@ final class DashboardStore: ObservableObject {
 
     private func startLocalService(_ service: LocalServiceConfig, reclaimAttempted: Bool = false) {
         if let process = startedProcesses[service.id], process.isRunning {
-            message = "\(service.name) 已在运行"
+            message = AppText.t("\(service.name) is already running", zh: "\(service.name) 已在运行")
             return
         }
 
         guard !service.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            message = "\(service.name) 没有启动命令"
-            showError(title: "启动失败", message: "\(service.name) 没有启动命令。")
+            message = AppText.t("\(service.name) has no start command", zh: "\(service.name) 没有启动命令")
+            showError(
+                title: AppText.t("Start Failed", zh: "启动失败"),
+                message: AppText.t("\(service.name) has no start command.", zh: "\(service.name) 没有启动命令。")
+            )
             return
         }
 
-        localServiceRuntimeMessages[service.id] = "正在启动"
-        message = "正在启动 \(service.name)"
+        localServiceRuntimeMessages[service.id] = AppText.t("Starting", zh: "正在启动")
+        message = AppText.t("Starting \(service.name)", zh: "正在启动 \(service.name)")
         let launchID = UUID()
         localServiceLaunchIDs[service.id] = launchID
         localServiceLaunchReclaimAttempts[launchID] = reclaimAttempted
@@ -848,16 +883,16 @@ final class DashboardStore: ObservableObject {
                 return
             }
 
-            message = "已启动 \(service.name)"
-            localServiceRuntimeMessages[service.id] = "已启动，正在等待端口检测"
+            message = AppText.t("Started \(service.name)", zh: "已启动 \(service.name)")
+            localServiceRuntimeMessages[service.id] = AppText.t("Started, waiting for port checks", zh: "已启动，正在等待端口检测")
             applyLocalServicesImmediately(from: config)
-	        } catch {
-	            localServiceLaunchIDs.removeValue(forKey: service.id)
-	            localServiceLaunchReclaimAttempts.removeValue(forKey: launchID)
-	            message = "启动 \(service.name) 失败：\(error.localizedDescription)"
-            localServiceRuntimeMessages[service.id] = "启动失败：\(error.localizedDescription)"
+		        } catch {
+		            localServiceLaunchIDs.removeValue(forKey: service.id)
+		            localServiceLaunchReclaimAttempts.removeValue(forKey: launchID)
+		            message = AppText.t("Starting \(service.name) failed: \(error.localizedDescription)", zh: "启动 \(service.name) 失败：\(error.localizedDescription)")
+            localServiceRuntimeMessages[service.id] = AppText.t("Start failed: \(error.localizedDescription)", zh: "启动失败：\(error.localizedDescription)")
             showError(
-                title: "启动 \(service.name) 失败",
+                title: AppText.t("Starting \(service.name) Failed", zh: "启动 \(service.name) 失败"),
                 message: error.localizedDescription,
                 logServiceID: service.id
             )
@@ -877,7 +912,7 @@ final class DashboardStore: ObservableObject {
         }
 
         startedProcesses.removeValue(forKey: serviceID)
-        localServiceRuntimeMessages[serviceID] = "已停止"
+        localServiceRuntimeMessages[serviceID] = AppText.t("Stopped", zh: "已停止")
         applyLocalServicesImmediately(from: config)
         return true
     }
@@ -901,21 +936,21 @@ final class DashboardStore: ObservableObject {
         }
 
         if wasStopping {
-            localServiceRuntimeMessages[serviceID] = "已停止"
-            message = "已停止 \(serviceName)"
+            localServiceRuntimeMessages[serviceID] = AppText.t("Stopped", zh: "已停止")
+            message = AppText.t("Stopped \(serviceName)", zh: "已停止 \(serviceName)")
         } else {
             let exitCode = finishedProcess.terminationStatus
-	            let logBlock = CommandRunner.lastLogBlock(logName: serviceID)
-	            let logTail = CommandRunner.lastLogLines(logName: serviceID, maxLines: 8)
-	            let reason = logTail.isEmpty ? "退出码 \(exitCode)" : logTail
-	            if isPortAlreadyInUse(logBlock), !reclaimAttempted {
-	                await reclaimOccupiedPortsAndRestart(serviceID: serviceID, serviceName: serviceName)
-	                return
-	            }
-	            localServiceRuntimeMessages[serviceID] = "已退出：\(reason)"
-            message = "\(serviceName) 已退出"
+		            let logBlock = CommandRunner.lastLogBlock(logName: serviceID)
+		            let logTail = CommandRunner.lastLogLines(logName: serviceID, maxLines: 8)
+		            let reason = logTail.isEmpty ? AppText.t("Exit code \(exitCode)", zh: "退出码 \(exitCode)") : logTail
+		            if isPortAlreadyInUse(logBlock), !reclaimAttempted {
+		                await reclaimOccupiedPortsAndRestart(serviceID: serviceID, serviceName: serviceName)
+		                return
+		            }
+		            localServiceRuntimeMessages[serviceID] = AppText.t("Exited: \(reason)", zh: "已退出：\(reason)")
+            message = AppText.t("\(serviceName) exited", zh: "\(serviceName) 已退出")
             showError(
-                title: "\(serviceName) 已退出",
+                title: AppText.t("\(serviceName) Exited", zh: "\(serviceName) 已退出"),
                 message: reason,
                 logServiceID: serviceID
             )
@@ -927,30 +962,38 @@ final class DashboardStore: ObservableObject {
 
 	    private func reclaimOccupiedPortsAndRestart(serviceID: String, serviceName: String) async {
 	        guard let service = config.localServices.first(where: { $0.id == serviceID }), !service.ports.isEmpty else {
-	            localServiceRuntimeMessages[serviceID] = "端口占用，但没有配置可处理的监控端口"
-	            message = "\(serviceName) 重启失败"
-	            showError(title: "\(serviceName) 重启失败", message: "检测到端口占用，但该服务没有配置监控端口。", logServiceID: serviceID)
+	            localServiceRuntimeMessages[serviceID] = AppText.t("Port is occupied, but no monitored port is configured for recovery", zh: "端口占用，但没有配置可处理的监控端口")
+	            message = AppText.t("\(serviceName) restart failed", zh: "\(serviceName) 重启失败")
+	            showError(
+                    title: AppText.t("\(serviceName) Restart Failed", zh: "\(serviceName) 重启失败"),
+                    message: AppText.t("Port occupation was detected, but this service has no monitored port configured.", zh: "检测到端口占用，但该服务没有配置监控端口。"),
+                    logServiceID: serviceID
+                )
 	            return
 	        }
 
 	        let occupants = await listeningPorts(for: service)
 	        guard !occupants.isEmpty else {
-	            localServiceRuntimeMessages[serviceID] = "端口占用，但没有找到监听进程"
-	            message = "\(serviceName) 重启失败"
-	            showError(title: "\(serviceName) 重启失败", message: "检测到端口占用，但没有找到监听该端口的进程。", logServiceID: serviceID)
+	            localServiceRuntimeMessages[serviceID] = AppText.t("Port is occupied, but no listener process was found", zh: "端口占用，但没有找到监听进程")
+	            message = AppText.t("\(serviceName) restart failed", zh: "\(serviceName) 重启失败")
+	            showError(
+                    title: AppText.t("\(serviceName) Restart Failed", zh: "\(serviceName) 重启失败"),
+                    message: AppText.t("Port occupation was detected, but no process listening on that port was found.", zh: "检测到端口占用，但没有找到监听该端口的进程。"),
+                    logServiceID: serviceID
+                )
 	            return
 	        }
 
 	        let summary = occupants
 	            .map { "\($0.processName)(pid \($0.pid)):\($0.port)" }
 	            .joined(separator: ", ")
-	        localServiceRuntimeMessages[serviceID] = "端口被占用，正在停止：\(summary)"
-	        message = "正在重启 \(serviceName)"
+	        localServiceRuntimeMessages[serviceID] = AppText.t("Port is occupied, stopping: \(summary)", zh: "端口被占用，正在停止：\(summary)")
+	        message = AppText.t("Restarting \(serviceName)", zh: "正在重启 \(serviceName)")
 
 	        await terminate(occupants, signal: "TERM")
 	        var remaining = await waitForPortsToRelease(service: service, timeout: 2.0)
 	        if !remaining.isEmpty {
-	            localServiceRuntimeMessages[serviceID] = "端口仍被占用，强制停止占用进程"
+	            localServiceRuntimeMessages[serviceID] = AppText.t("Port is still occupied, force stopping listener process", zh: "端口仍被占用，强制停止占用进程")
 	            await terminate(remaining, signal: "KILL")
 	            remaining = await waitForPortsToRelease(service: service, timeout: 2.0)
 	        }
@@ -959,13 +1002,17 @@ final class DashboardStore: ObservableObject {
 	            let remainingSummary = remaining
 	                .map { "\($0.processName)(pid \($0.pid)):\($0.port)" }
 	                .joined(separator: ", ")
-	            localServiceRuntimeMessages[serviceID] = "端口释放失败：\(remainingSummary)"
-	            message = "\(serviceName) 重启失败"
-	            showError(title: "\(serviceName) 重启失败", message: "无法停止占用端口的进程：\(remainingSummary)", logServiceID: serviceID)
+	            localServiceRuntimeMessages[serviceID] = AppText.t("Port release failed: \(remainingSummary)", zh: "端口释放失败：\(remainingSummary)")
+	            message = AppText.t("\(serviceName) restart failed", zh: "\(serviceName) 重启失败")
+	            showError(
+                    title: AppText.t("\(serviceName) Restart Failed", zh: "\(serviceName) 重启失败"),
+                    message: AppText.t("Could not stop the process occupying the port: \(remainingSummary)", zh: "无法停止占用端口的进程：\(remainingSummary)"),
+                    logServiceID: serviceID
+                )
 	            return
 	        }
 
-	        localServiceRuntimeMessages[serviceID] = "端口已释放，正在重新启动"
+	        localServiceRuntimeMessages[serviceID] = AppText.t("Port released, restarting", zh: "端口已释放，正在重新启动")
 	        startLocalService(service, reclaimAttempted: true)
 	    }
 

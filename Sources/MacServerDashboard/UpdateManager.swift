@@ -37,11 +37,11 @@ enum UpdateManager {
                 $0.name.contains("-macos-\(arch)") &&
                 $0.name.hasSuffix(".dmg")
         }) else {
-            throw UpdateError.assetNotFound("没有找到适用于 \(arch) 的 DMG 安装包。")
+            throw UpdateError.assetNotFound(AppText.t("No DMG installer found for \(arch).", zh: "没有找到适用于 \(arch) 的 DMG 安装包。"))
         }
 
         guard let checksum = release.assets.first(where: { $0.name.hasSuffix("-checksums.txt") }) else {
-            throw UpdateError.assetNotFound("没有找到 checksum 文件。")
+            throw UpdateError.assetNotFound(AppText.t("No checksum file found.", zh: "没有找到 checksum 文件。"))
         }
 
         return AvailableUpdate(
@@ -59,17 +59,17 @@ enum UpdateManager {
         _ update: AvailableUpdate,
         progress: @escaping @Sendable (UpdateInstallProgress) -> Void
     ) async throws -> URL {
-        progress(UpdateInstallProgress(detail: "准备安装更新", fraction: 0.02))
+        progress(UpdateInstallProgress(detail: AppText.t("Preparing update installation", zh: "准备安装更新"), fraction: 0.02))
         guard let executableURL = currentExecutableURL() else {
-            throw UpdateError.installFailed("无法确定当前可执行文件路径。")
+            throw UpdateError.installFailed(AppText.t("Could not determine current executable path.", zh: "无法确定当前可执行文件路径。"))
         }
 
         guard let currentAppURL = currentAppBundleURL() else {
-            throw UpdateError.installFailed("应用内更新需要从 MacServerDashboard.app 启动。")
+            throw UpdateError.installFailed(AppText.t("In-app updates require launching from MacServerDashboard.app.", zh: "应用内更新需要从 MacServerDashboard.app 启动。"))
         }
 
         guard FileManager.default.isWritableFile(atPath: currentAppURL.deletingLastPathComponent().path) else {
-            throw UpdateError.installFailed("当前安装目录不可写：\(currentAppURL.deletingLastPathComponent().path)")
+            throw UpdateError.installFailed(AppText.t("Current installation directory is not writable: \(currentAppURL.deletingLastPathComponent().path)", zh: "当前安装目录不可写：\(currentAppURL.deletingLastPathComponent().path)"))
         }
 
         let workDirectory = FileManager.default.temporaryDirectory
@@ -82,38 +82,38 @@ enum UpdateManager {
 
         let installerURL = workDirectory.appendingPathComponent(update.archiveName)
         let checksumURL = workDirectory.appendingPathComponent(update.checksumName)
-        progress(UpdateInstallProgress(detail: "正在下载 DMG", fraction: 0.05))
+        progress(UpdateInstallProgress(detail: AppText.t("Downloading DMG", zh: "正在下载 DMG"), fraction: 0.05))
         try await download(update.archiveURL, to: installerURL) { downloadFraction in
             let fraction = 0.05 + (downloadFraction ?? 0) * 0.55
-            progress(UpdateInstallProgress(detail: "正在下载 DMG", fraction: downloadFraction == nil ? nil : fraction))
+            progress(UpdateInstallProgress(detail: AppText.t("Downloading DMG", zh: "正在下载 DMG"), fraction: downloadFraction == nil ? nil : fraction))
         }
 
-        progress(UpdateInstallProgress(detail: "正在下载 checksum", fraction: 0.62))
+        progress(UpdateInstallProgress(detail: AppText.t("Downloading checksum", zh: "正在下载 checksum"), fraction: 0.62))
         try await download(update.checksumURL, to: checksumURL) { downloadFraction in
             let fraction = 0.62 + (downloadFraction ?? 0) * 0.08
-            progress(UpdateInstallProgress(detail: "正在下载 checksum", fraction: downloadFraction == nil ? nil : fraction))
+            progress(UpdateInstallProgress(detail: AppText.t("Downloading checksum", zh: "正在下载 checksum"), fraction: downloadFraction == nil ? nil : fraction))
         }
 
-        progress(UpdateInstallProgress(detail: "正在校验 SHA256", fraction: 0.72))
+        progress(UpdateInstallProgress(detail: AppText.t("Verifying SHA256", zh: "正在校验 SHA256"), fraction: 0.72))
         let checksumText = try String(contentsOf: checksumURL, encoding: .utf8)
         guard let expectedChecksum = checksum(in: checksumText, for: update.archiveName) else {
-            throw UpdateError.checksumFailed("checksum 文件里没有 \(update.archiveName)。")
+            throw UpdateError.checksumFailed(AppText.t("The checksum file does not contain \(update.archiveName).", zh: "checksum 文件里没有 \(update.archiveName)。"))
         }
 
         let actualChecksum = try sha256(of: installerURL)
         guard expectedChecksum.lowercased() == actualChecksum.lowercased() else {
-            throw UpdateError.checksumFailed("SHA256 不匹配。期望 \(expectedChecksum)，实际 \(actualChecksum)。")
+            throw UpdateError.checksumFailed(AppText.t("SHA256 mismatch. Expected \(expectedChecksum), got \(actualChecksum).", zh: "SHA256 不匹配。期望 \(expectedChecksum)，实际 \(actualChecksum)。"))
         }
 
-        progress(UpdateInstallProgress(detail: "正在挂载 DMG", fraction: 0.78))
+        progress(UpdateInstallProgress(detail: AppText.t("Mounting DMG", zh: "正在挂载 DMG"), fraction: 0.78))
         try await attachDiskImage(installerURL, to: mountDirectory)
         do {
-            progress(UpdateInstallProgress(detail: "正在查找新版本应用", fraction: 0.84))
+            progress(UpdateInstallProgress(detail: AppText.t("Finding new app bundle", zh: "正在查找新版本应用"), fraction: 0.84))
             let newAppURL = try findPackagedApp(in: mountDirectory)
-            progress(UpdateInstallProgress(detail: "正在替换应用", fraction: 0.9))
+            progress(UpdateInstallProgress(detail: AppText.t("Replacing app", zh: "正在替换应用"), fraction: 0.9))
             let installedAppURL = try replaceAppBundle(at: currentAppURL, with: newAppURL)
             await detachDiskImage(at: mountDirectory)
-            progress(UpdateInstallProgress(detail: "安装完成", fraction: 0.96))
+            progress(UpdateInstallProgress(detail: AppText.t("Installation complete", zh: "安装完成"), fraction: 0.96))
             return installedAppURL
                 .appendingPathComponent("Contents/MacOS", isDirectory: true)
                 .appendingPathComponent(executableURL.lastPathComponent)
@@ -125,7 +125,7 @@ enum UpdateManager {
 
     static func relaunch(from executableURL: URL) throws {
         guard let appURL = appBundleURL(containing: executableURL) else {
-            throw UpdateError.relaunchFailed("更新后的应用不是 .app：\(executableURL.path)")
+            throw UpdateError.relaunchFailed(AppText.t("The updated application is not a .app bundle: \(executableURL.path)", zh: "更新后的应用不是 .app：\(executableURL.path)"))
         }
         try openAppBundle(appURL)
     }
@@ -158,7 +158,7 @@ enum UpdateManager {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse,
               200..<300 ~= httpResponse.statusCode else {
-            throw UpdateError.networkFailed("GitHub Releases API 请求失败。")
+            throw UpdateError.networkFailed(AppText.t("GitHub Releases API request failed.", zh: "GitHub Releases API 请求失败。"))
         }
 
         return try JSONDecoder().decode(GitHubRelease.self, from: data)
@@ -175,7 +175,7 @@ enum UpdateManager {
         let (bytes, response) = try await URLSession.shared.bytes(for: request)
         guard let httpResponse = response as? HTTPURLResponse,
               200..<300 ~= httpResponse.statusCode else {
-            throw UpdateError.networkFailed("下载失败：\(remoteURL.absoluteString)")
+            throw UpdateError.networkFailed(AppText.t("Download failed: \(remoteURL.absoluteString)", zh: "下载失败：\(remoteURL.absoluteString)"))
         }
 
         if FileManager.default.fileExists(atPath: localURL.path) {
@@ -227,7 +227,7 @@ enum UpdateManager {
         ].joined(separator: " ")
         let result = await CommandRunner.run(command, timeout: 30)
         guard result.exitCode == 0 else {
-            throw UpdateError.installFailed(result.output.isEmpty ? "挂载 DMG 失败。" : result.output)
+            throw UpdateError.installFailed(result.output.isEmpty ? AppText.t("Mounting DMG failed.", zh: "挂载 DMG 失败。") : result.output)
         }
     }
 
@@ -242,7 +242,7 @@ enum UpdateManager {
             includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles]
         ) else {
-            throw UpdateError.installFailed("无法读取解压目录。")
+            throw UpdateError.installFailed(AppText.t("Could not read mounted directory.", zh: "无法读取解压目录。"))
         }
 
         for case let url as URL in enumerator where url.lastPathComponent == "MacServerDashboard.app" {
@@ -253,7 +253,7 @@ enum UpdateManager {
             return url
         }
 
-        throw UpdateError.installFailed("DMG 中没有找到 MacServerDashboard.app。")
+        throw UpdateError.installFailed(AppText.t("MacServerDashboard.app was not found in the DMG.", zh: "DMG 中没有找到 MacServerDashboard.app。"))
     }
 
     private static func replaceAppBundle(at targetAppURL: URL, with newAppURL: URL) throws -> URL {
@@ -317,7 +317,7 @@ enum UpdateManager {
             try process.run()
             process.waitUntilExit()
             guard process.terminationStatus == 0 else {
-                throw UpdateError.relaunchFailed("open 返回退出码 \(process.terminationStatus)")
+                throw UpdateError.relaunchFailed(AppText.t("open exited with code \(process.terminationStatus)", zh: "open 返回退出码 \(process.terminationStatus)"))
             }
         } catch {
             throw UpdateError.relaunchFailed(error.localizedDescription)

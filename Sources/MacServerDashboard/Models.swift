@@ -22,19 +22,45 @@ struct UpdateProgressState: Equatable {
 }
 
 enum ServiceKind: String, CaseIterable, Identifiable, Sendable {
-    case local = "本机容器服务"
-    case docker = "Docker 容器"
+    case local
+    case docker
 
     var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .local:
+            return AppText.t("Local services", zh: "本机容器服务")
+        case .docker:
+            return AppText.t("Docker containers", zh: "Docker 容器")
+        }
+    }
 }
 
 enum HealthState: String, Sendable {
-    case online = "可连接"
-    case available = "可运行"
-    case offline = "不可连接"
-    case running = "运行中"
-    case configured = "已配置"
-    case unknown = "未知"
+    case online
+    case available
+    case offline
+    case running
+    case configured
+    case unknown
+
+    var displayName: String {
+        switch self {
+        case .online:
+            return AppText.t("Reachable", zh: "可连接")
+        case .available:
+            return AppText.t("Runnable", zh: "可运行")
+        case .offline:
+            return AppText.t("Unreachable", zh: "不可连接")
+        case .running:
+            return AppText.t("Running", zh: "运行中")
+        case .configured:
+            return AppText.t("Configured", zh: "已配置")
+        case .unknown:
+            return AppText.t("Unknown", zh: "未知")
+        }
+    }
 
     var tint: Color {
         switch self {
