@@ -30,9 +30,9 @@ enum UpdateManager {
         guard let archive = release.assets.first(where: {
             $0.name.hasPrefix("MacServerDashboard-") &&
                 $0.name.contains("-macos-\(arch)") &&
-                $0.name.hasSuffix(".tar.gz")
+                $0.name.hasSuffix(".dmg")
         }) else {
-            throw UpdateError.assetNotFound("没有找到适用于 \(arch) 的安装包。")
+            throw UpdateError.assetNotFound("没有找到适用于 \(arch) 的 DMG 安装包。")
         }
 
         guard let checksum = release.assets.first(where: { $0.name.hasSuffix("-checksums.txt") }) else {
@@ -55,21 +55,25 @@ enum UpdateManager {
             throw UpdateError.installFailed("无法确定当前可执行文件路径。")
         }
 
-        guard FileManager.default.isWritableFile(atPath: executableURL.deletingLastPathComponent().path) else {
-            throw UpdateError.installFailed("当前安装目录不可写：\(executableURL.deletingLastPathComponent().path)")
+        guard let currentAppURL = currentAppBundleURL() else {
+            throw UpdateError.installFailed("应用内更新需要从 MacServerDashboard.app 启动。")
+        }
+
+        guard FileManager.default.isWritableFile(atPath: currentAppURL.deletingLastPathComponent().path) else {
+            throw UpdateError.installFailed("当前安装目录不可写：\(currentAppURL.deletingLastPathComponent().path)")
         }
 
         let workDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("MacServerDashboardUpdate-\(UUID().uuidString)", isDirectory: true)
-        let extractDirectory = workDirectory.appendingPathComponent("extract", isDirectory: true)
-        try FileManager.default.createDirectory(at: extractDirectory, withIntermediateDirectories: true)
+        let mountDirectory = workDirectory.appendingPathComponent("mount", isDirectory: true)
+        try FileManager.default.createDirectory(at: mountDirectory, withIntermediateDirectories: true)
         defer {
             try? FileManager.default.removeItem(at: workDirectory)
         }
 
-        let archiveURL = workDirectory.appendingPathComponent(update.archiveName)
+        let installerURL = workDirectory.appendingPathComponent(update.archiveName)
         let checksumURL = workDirectory.appendingPathComponent(update.checksumName)
-        try await download(update.archiveURL, to: archiveURL)
+        try await download(update.archiveURL, to: installerURL)
         try await download(update.checksumURL, to: checksumURL)
 
         let checksumText = try String(contentsOf: checksumURL, encoding: .utf8)
@@ -77,31 +81,30 @@ enum UpdateManager {
             throw UpdateError.checksumFailed("checksum 文件里没有 \(update.archiveName)。")
         }
 
-        let actualChecksum = try sha256(of: archiveURL)
+        let actualChecksum = try sha256(of: installerURL)
         guard expectedChecksum.lowercased() == actualChecksum.lowercased() else {
             throw UpdateError.checksumFailed("SHA256 不匹配。期望 \(expectedChecksum)，实际 \(actualChecksum)。")
         }
 
-        try await extractTarGzip(archiveURL, to: extractDirectory)
-        let newExecutableURL = try findPackagedExecutable(in: extractDirectory)
-        try replaceExecutable(at: executableURL, with: newExecutableURL)
-        return executableURL
+        try await attachDiskImage(installerURL, to: mountDirectory)
+        do {
+            let newAppURL = try findPackagedApp(in: mountDirectory)
+            let installedAppURL = try replaceAppBundle(at: currentAppURL, with: newAppURL)
+            await detachDiskImage(at: mountDirectory)
+            return installedAppURL
+                .appendingPathComponent("Contents/MacOS", isDirectory: true)
+                .appendingPathComponent(executableURL.lastPathComponent)
+        } catch {
+            await detachDiskImage(at: mountDirectory)
+            throw error
+        }
     }
 
     static func relaunch(from executableURL: URL) throws {
-        guard FileManager.default.isExecutableFile(atPath: executableURL.path) else {
-            throw UpdateError.relaunchFailed("更新后的可执行文件不可运行：\(executableURL.path)")
+        guard let appURL = appBundleURL(containing: executableURL) else {
+            throw UpdateError.relaunchFailed("更新后的应用不是 .app：\(executableURL.path)")
         }
-
-        let process = Process()
-        process.executableURL = executableURL
-        process.currentDirectoryURL = executableURL.deletingLastPathComponent()
-
-        do {
-            try process.run()
-        } catch {
-            throw UpdateError.relaunchFailed(error.localizedDescription)
-        }
+        try openAppBundle(appURL)
     }
 
     static func compareVersions(_ left: String, _ right: String) -> ComparisonResult {
@@ -154,50 +157,74 @@ enum UpdateManager {
         try FileManager.default.moveItem(at: temporaryURL, to: localURL)
     }
 
-    private static func extractTarGzip(_ archiveURL: URL, to destinationURL: URL) async throws {
-        let command = "tar -xzf \(CommandRunner.shellEscaped(archiveURL.path)) -C \(CommandRunner.shellEscaped(destinationURL.path))"
+    private static func attachDiskImage(_ diskImageURL: URL, to mountURL: URL) async throws {
+        let command = [
+            "hdiutil attach",
+            CommandRunner.shellEscaped(diskImageURL.path),
+            "-mountpoint",
+            CommandRunner.shellEscaped(mountURL.path),
+            "-nobrowse",
+            "-readonly"
+        ].joined(separator: " ")
         let result = await CommandRunner.run(command, timeout: 30)
         guard result.exitCode == 0 else {
-            throw UpdateError.installFailed(result.output.isEmpty ? "解压安装包失败。" : result.output)
+            throw UpdateError.installFailed(result.output.isEmpty ? "挂载 DMG 失败。" : result.output)
         }
     }
 
-    private static func findPackagedExecutable(in directory: URL) throws -> URL {
+    private static func detachDiskImage(at mountURL: URL) async {
+        let command = "hdiutil detach \(CommandRunner.shellEscaped(mountURL.path))"
+        _ = await CommandRunner.run(command, timeout: 10)
+    }
+
+    private static func findPackagedApp(in directory: URL) throws -> URL {
         guard let enumerator = FileManager.default.enumerator(
             at: directory,
-            includingPropertiesForKeys: [.isExecutableKey],
+            includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles]
         ) else {
             throw UpdateError.installFailed("无法读取解压目录。")
         }
 
-        for case let url as URL in enumerator where url.lastPathComponent == "MacServerDashboard" {
-            if FileManager.default.isExecutableFile(atPath: url.path) {
-                return url
+        for case let url as URL in enumerator where url.lastPathComponent == "MacServerDashboard.app" {
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+                continue
             }
+            return url
         }
 
-        throw UpdateError.installFailed("安装包中没有找到 MacServerDashboard 可执行文件。")
+        throw UpdateError.installFailed("DMG 中没有找到 MacServerDashboard.app。")
     }
 
-    private static func replaceExecutable(at targetURL: URL, with newExecutableURL: URL) throws {
-        let backupURL = targetURL.deletingLastPathComponent()
-            .appendingPathComponent("\(targetURL.lastPathComponent).previous")
-        let replacementURL = targetURL.deletingLastPathComponent()
-            .appendingPathComponent("\(targetURL.lastPathComponent).new")
+    private static func replaceAppBundle(at targetAppURL: URL, with newAppURL: URL) throws -> URL {
+        let backupURL = targetAppURL.deletingLastPathComponent()
+            .appendingPathComponent("\(targetAppURL.lastPathComponent).previous")
+        let replacementURL = targetAppURL.deletingLastPathComponent()
+            .appendingPathComponent("\(targetAppURL.lastPathComponent).new")
 
         try? FileManager.default.removeItem(at: backupURL)
         try? FileManager.default.removeItem(at: replacementURL)
-        try FileManager.default.copyItem(at: newExecutableURL, to: replacementURL)
-        chmod(replacementURL.path, 0o755)
+        try FileManager.default.copyItem(at: newAppURL, to: replacementURL)
+        chmodPackagedExecutable(in: replacementURL)
 
-        try FileManager.default.moveItem(at: targetURL, to: backupURL)
+        try FileManager.default.moveItem(at: targetAppURL, to: backupURL)
         do {
-            try FileManager.default.moveItem(at: replacementURL, to: targetURL)
+            try FileManager.default.moveItem(at: replacementURL, to: targetAppURL)
         } catch {
-            try? FileManager.default.moveItem(at: backupURL, to: targetURL)
+            try? FileManager.default.moveItem(at: backupURL, to: targetAppURL)
             throw error
         }
+
+        return targetAppURL
+    }
+
+    private static func currentAppBundleURL() -> URL? {
+        let bundleURL = Bundle.main.bundleURL
+        guard bundleURL.pathExtension == "app" else {
+            return nil
+        }
+        return bundleURL
     }
 
     private static func currentExecutableURL() -> URL? {
@@ -209,6 +236,36 @@ enum UpdateManager {
             return nil
         }
         return URL(fileURLWithPath: argument)
+    }
+
+    private static func appBundleURL(containing executableURL: URL) -> URL? {
+        var url = executableURL.deletingLastPathComponent()
+        while url.path != "/" {
+            if url.pathExtension == "app" {
+                return url
+            }
+            url.deleteLastPathComponent()
+        }
+        return nil
+    }
+
+    private static func openAppBundle(_ appURL: URL) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = [appURL.path]
+
+        do {
+            try process.run()
+        } catch {
+            throw UpdateError.relaunchFailed(error.localizedDescription)
+        }
+    }
+
+    private static func chmodPackagedExecutable(in appURL: URL) {
+        let executableURL = appURL
+            .appendingPathComponent("Contents/MacOS", isDirectory: true)
+            .appendingPathComponent("MacServerDashboard")
+        _ = chmod(executableURL.path, 0o755)
     }
 
     private static func checksum(in text: String, for fileName: String) -> String? {

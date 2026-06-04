@@ -11,8 +11,10 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="MacServerDashboard"
 ARCH="$(uname -m)"
 DIST_DIR="$ROOT_DIR/dist"
-PACKAGE_DIR="$DIST_DIR/$APP_NAME-$VERSION-macos-$ARCH"
-ARCHIVE="$DIST_DIR/$APP_NAME-$VERSION-macos-$ARCH.tar.gz"
+STAGING_DIR="$DIST_DIR/$APP_NAME-$VERSION-stage"
+DMG_ROOT="$DIST_DIR/$APP_NAME-$VERSION-dmg-root"
+APP_BUNDLE="$STAGING_DIR/$APP_NAME.app"
+DMG="$DIST_DIR/$APP_NAME-$VERSION-macos-$ARCH.dmg"
 CHECKSUMS="$DIST_DIR/$APP_NAME-$VERSION-checksums.txt"
 
 cd "$ROOT_DIR"
@@ -31,37 +33,59 @@ export CLANG_MODULE_CACHE_PATH="${CLANG_MODULE_CACHE_PATH:-"$ROOT_DIR/.build/cla
 mkdir -p "$CLANG_MODULE_CACHE_PATH"
 swift build -c release
 
-rm -rf "$PACKAGE_DIR" "$ARCHIVE" "$CHECKSUMS"
-mkdir -p "$PACKAGE_DIR/bin" "$PACKAGE_DIR/scripts"
+rm -rf "$STAGING_DIR" "$DMG_ROOT" "$DMG" "$CHECKSUMS"
+mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 
-cp ".build/release/$APP_NAME" "$PACKAGE_DIR/bin/$APP_NAME"
-cp scripts/install-launch-agent.sh "$PACKAGE_DIR/scripts/install-launch-agent.sh"
-cp scripts/uninstall-launch-agent.sh "$PACKAGE_DIR/scripts/uninstall-launch-agent.sh"
-cp config.sample.json "$PACKAGE_DIR/config.sample.json"
-cp README.md "$PACKAGE_DIR/README.md"
-
-cat > "$PACKAGE_DIR/INSTALL.md" <<EOF
-# $APP_NAME $VERSION
-
-Run from the extracted package directory:
-
-\`\`\`bash
-scripts/install-launch-agent.sh bin/$APP_NAME
-\`\`\`
-
-Uninstall:
-
-\`\`\`bash
-scripts/uninstall-launch-agent.sh
-\`\`\`
+cp ".build/release/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+chmod 755 "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleDisplayName</key>
+  <string>$APP_NAME</string>
+  <key>CFBundleExecutable</key>
+  <string>$APP_NAME</string>
+  <key>CFBundleIdentifier</key>
+  <string>dev.codex.mac-server-dashboard</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>$APP_NAME</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>$SOURCE_VERSION</string>
+  <key>CFBundleVersion</key>
+  <string>$SOURCE_VERSION</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>14.0</string>
+  <key>LSUIElement</key>
+  <true/>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+</dict>
+</plist>
 EOF
+printf "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
 
-tar -czf "$ARCHIVE" -C "$DIST_DIR" "$(basename "$PACKAGE_DIR")"
+mkdir -p "$DMG_ROOT"
+cp -R "$APP_BUNDLE" "$DMG_ROOT/$APP_NAME.app"
+ln -s /Applications "$DMG_ROOT/Applications"
+hdiutil create \
+  -volname "$APP_NAME $VERSION" \
+  -srcfolder "$DMG_ROOT" \
+  -ov \
+  -format UDZO \
+  "$DMG" >/dev/null
 (
   cd "$DIST_DIR"
-  shasum -a 256 "$(basename "$ARCHIVE")" > "$(basename "$CHECKSUMS")"
+  shasum -a 256 "$(basename "$DMG")" > "$(basename "$CHECKSUMS")"
 )
 
 echo "Created:"
-echo "  $ARCHIVE"
+echo "  $DMG"
 echo "  $CHECKSUMS"

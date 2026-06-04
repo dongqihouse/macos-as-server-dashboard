@@ -34,14 +34,16 @@ swift run MacServerDashboard
 ## 构建 Release
 
 ```bash
-swift build -c release
+scripts/package-release.sh v0.1.2
 ```
 
-生成的可执行文件在：
+生成的安装包在：
 
 ```text
-.build/release/MacServerDashboard
+dist/MacServerDashboard-v0.1.2-macos-<arch>.dmg
 ```
+
+打开 DMG 后，将 `MacServerDashboard.app` 拖到 `Applications`。
 
 ## 发布 GitHub Release
 
@@ -55,10 +57,10 @@ swift build -c release
 scripts/release.sh v0.1.0
 ```
 
-3. GitHub Actions 会生成并上传：
+4. GitHub Actions 会生成并上传：
 
 ```text
-MacServerDashboard-v0.1.0-macos-<arch>.tar.gz
+MacServerDashboard-v0.1.0-macos-<arch>.dmg
 MacServerDashboard-v0.1.0-checksums.txt
 ```
 
@@ -68,11 +70,11 @@ MacServerDashboard-v0.1.0-checksums.txt
 scripts/package-release.sh v0.1.0
 ```
 
-生成的文件会放在 `dist/`。应用内置更新可以读取 GitHub latest release，选择 `MacServerDashboard-*-macos-*.tar.gz` 资产下载，并用同版本 `checksums.txt` 校验 SHA256。
+生成的文件会放在 `dist/`。应用内置更新可以读取 GitHub latest release，选择 `MacServerDashboard-*-macos-*.dmg` 资产下载，并用同版本 `checksums.txt` 校验 SHA256。
 
 ## 应用内更新
 
-右上角菜单里点击“检查更新”，dashboard 会读取 GitHub latest release。发现新版本后，用户确认安装即可自动下载当前架构的安装包、校验 SHA256，并替换当前可执行文件。安装完成后退出并重新打开 dashboard，新版本会生效。
+右上角菜单里点击“检查更新”，dashboard 会读取 GitHub latest release。发现新版本后，用户确认安装即可自动下载当前架构的 DMG、校验 SHA256，并替换当前 `MacServerDashboard.app`。安装完成后 dashboard 会自动重启。
 
 ## 安装开机自启
 
