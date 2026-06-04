@@ -12,9 +12,9 @@ struct ContentView: View {
                 Divider()
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
+                        SystemStatusView(status: store.systemStatus)
                         ServiceGroupView(title: ServiceKind.local.rawValue, services: store.localServices, store: store)
                         ServiceGroupView(title: ServiceKind.docker.rawValue, services: store.dockerServices, store: store)
-                        SystemStatusView(status: store.systemStatus)
                     }
                     .padding(14)
                 }
