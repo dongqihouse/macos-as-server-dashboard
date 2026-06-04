@@ -95,7 +95,7 @@ final class DashboardStore: ObservableObject {
         message = "已刷新"
         AppLogger.info(
             "Refresh completed local=\(localSnapshots.count) docker=\(dockerSnapshots.count) " +
-                "storage=\(status.storageUsedBytes != nil) cpu=\(status.cpuUsagePercent != nil) memory=\(status.memoryUsedBytes != nil) temperature=\(status.temperatureCelsius != nil)"
+                "storage=\(status.storageUsedBytes != nil) cpu=\(status.cpuUsagePercent != nil) memory=\(status.memoryUsedBytes != nil) network=\(status.networkReachable.map { String($0) } ?? "unknown")"
         )
         isRefreshing = false
         runPendingRefreshIfNeeded()

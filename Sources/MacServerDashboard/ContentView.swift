@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct ContentView: View {
@@ -26,6 +27,7 @@ struct ContentView: View {
         }
         .frame(minWidth: 420, idealWidth: 500, minHeight: 560, idealHeight: 680)
         .background(.regularMaterial)
+        .background(TextInputFocusDismissView())
         .alert(item: $store.activeAlert) { alert in
             if let logServiceID = alert.logServiceID {
                 return Alert(
@@ -87,6 +89,84 @@ private struct UpdateProgressOverlay: View {
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .shadow(radius: 12)
         }
+    }
+}
+
+private struct TextInputFocusDismissView: NSViewRepresentable {
+    func makeNSView(context: Context) -> FocusDismissNSView {
+        FocusDismissNSView()
+    }
+
+    func updateNSView(_ nsView: FocusDismissNSView, context: Context) {}
+
+    static func dismantleNSView(_ nsView: FocusDismissNSView, coordinator: ()) {
+        nsView.removeEventMonitor()
+    }
+}
+
+private final class FocusDismissNSView: NSView {
+    private var eventMonitor: Any?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+
+        if window == nil {
+            removeEventMonitor()
+        } else {
+            installEventMonitorIfNeeded()
+        }
+    }
+
+    private func installEventMonitorIfNeeded() {
+        guard eventMonitor == nil else {
+            return
+        }
+
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] event in
+            guard let self, event.window === self.window else {
+                return event
+            }
+
+            if !self.eventHitsTextInput(event) {
+                self.window?.makeFirstResponder(nil)
+            }
+            return event
+        }
+    }
+
+    func removeEventMonitor() {
+        guard let eventMonitor else {
+            return
+        }
+
+        NSEvent.removeMonitor(eventMonitor)
+        self.eventMonitor = nil
+    }
+
+    private func eventHitsTextInput(_ event: NSEvent) -> Bool {
+        guard let contentView = window?.contentView else {
+            return false
+        }
+
+        let location = event.locationInWindow
+        guard let hitView = contentView.hitTest(location) else {
+            return false
+        }
+
+        return hitView.hasTextInputAncestor
+    }
+}
+
+private extension NSView {
+    var hasTextInputAncestor: Bool {
+        var currentView: NSView? = self
+        while let view = currentView {
+            if view is NSTextField || view is NSTextView || view is NSSearchField || view is NSComboBox {
+                return true
+            }
+            currentView = view.superview
+        }
+        return false
     }
 }
 
@@ -217,10 +297,10 @@ private struct SystemStatusView: View {
                     symbolName: "memorychip"
                 )
                 SystemMetricTile(
-                    title: "温度",
-                    value: temperatureValue(status.temperatureCelsius),
-                    detail: status.temperatureCelsius == nil ? "传感器不可读" : "CPU 温度",
-                    symbolName: "thermometer.medium"
+                    title: "网络",
+                    value: networkValue(status.networkReachable),
+                    detail: networkDetail(status.networkReachable),
+                    symbolName: "network"
                 )
             }
         }
@@ -248,11 +328,18 @@ private struct SystemStatusView: View {
         return formatPercent(value)
     }
 
-    private func temperatureValue(_ value: Double?) -> String {
+    private func networkValue(_ value: Bool?) -> String {
         guard let value else {
             return "不可用"
         }
-        return String(format: "%.1f°C", value)
+        return value ? "可连接" : "不可连接"
+    }
+
+    private func networkDetail(_ value: Bool?) -> String {
+        guard value != nil else {
+            return "探测不可用"
+        }
+        return "外网连通性"
     }
 
     private func formatPercent(_ value: Double) -> String {
@@ -566,6 +653,7 @@ private struct LocalServiceLogView: View {
     @Environment(\.dismiss) private var dismiss
     var service: LocalServiceConfig
     @State private var logText = ""
+    private let bottomID = "log-bottom"
     private let refreshTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -600,12 +688,25 @@ private struct LocalServiceLogView: View {
                 }
             }
 
-            ScrollView {
-                Text(logText.isEmpty ? "暂无日志" : logText)
-                    .font(.system(.caption, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(10)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(logText.isEmpty ? "暂无日志" : logText)
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(10)
+                        Color.clear
+                            .frame(height: 1)
+                            .id(bottomID)
+                    }
+                }
+                .onChange(of: logText) {
+                    scrollToBottom(proxy)
+                }
+                .onAppear {
+                    scrollToBottom(proxy)
+                }
             }
             .background(.thinMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -620,6 +721,14 @@ private struct LocalServiceLogView: View {
 
     private func refreshLog() {
         logText = store.localServiceLogText(serviceID: service.id)
+    }
+
+    private func scrollToBottom(_ proxy: ScrollViewProxy) {
+        DispatchQueue.main.async {
+            withAnimation(.easeOut(duration: 0.12)) {
+                proxy.scrollTo(bottomID, anchor: .bottom)
+            }
+        }
     }
 }
 

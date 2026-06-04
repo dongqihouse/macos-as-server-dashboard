@@ -5,7 +5,7 @@ enum SystemStatusDiscovery {
     static func snapshot() async -> SystemStatusSnapshot {
         async let cpuUsage = cpuUsagePercent()
         async let memory = memoryUsage()
-        async let temperature = temperatureCelsius()
+        async let network = networkReachable()
         let storage = storageUsage()
 
         let memoryUsage = await memory
@@ -15,7 +15,7 @@ enum SystemStatusDiscovery {
             memoryUsedBytes: memoryUsage?.used,
             memoryTotalBytes: memoryUsage?.total,
             cpuUsagePercent: await cpuUsage,
-            temperatureCelsius: await temperature
+            networkReachable: await network
         )
     }
 
@@ -73,25 +73,6 @@ enum SystemStatusDiscovery {
         return clampPercent((1 - Double(idle) / Double(total)) * 100)
     }
 
-    private static func temperatureCelsius() async -> Double? {
-        let commands = [
-            "if command -v osx-cpu-temp >/dev/null 2>&1; then osx-cpu-temp; fi",
-            "if command -v istats >/dev/null 2>&1; then istats cpu temp --no-graphs; fi"
-        ]
-
-        for command in commands {
-            let result = await CommandRunner.run(command, timeout: 3)
-            guard result.exitCode == 0,
-                  let temperature = parseTemperature(from: result.output) else {
-                continue
-            }
-            return temperature
-        }
-
-        AppLogger.info("Temperature discovery unavailable")
-        return nil
-    }
-
     private static func parsePageSize(from output: String) -> Int? {
         guard let range = output.range(of: "page size of ") else {
             return nil
@@ -119,6 +100,26 @@ enum SystemStatusDiscovery {
             }
     }
 
+    private static func networkReachable() async -> Bool? {
+        let endpoints = [
+            (host: "1.1.1.1", port: 53),
+            (host: "8.8.8.8", port: 53),
+            (host: "223.5.5.5", port: 53)
+        ]
+
+        for endpoint in endpoints {
+            let command = "nc -G 1 -z \(CommandRunner.shellEscaped(endpoint.host)) \(endpoint.port)"
+            let result = await CommandRunner.run(command, timeout: 2)
+            if result.exitCode == 0 {
+                AppLogger.info("Network connectivity reachable endpoint=\(endpoint.host):\(endpoint.port)")
+                return true
+            }
+        }
+
+        AppLogger.info("Network connectivity unavailable")
+        return false
+    }
+
     private static func cpuTicks() -> CPUTicks? {
         var info = host_cpu_load_info_data_t()
         var count = mach_msg_type_number_t(MemoryLayout<host_cpu_load_info_data_t>.stride / MemoryLayout<integer_t>.stride)
@@ -138,18 +139,6 @@ enum SystemStatusDiscovery {
             idle: UInt64(info.cpu_ticks.2),
             nice: UInt64(info.cpu_ticks.3)
         )
-    }
-
-    private static func parseTemperature(from output: String) -> Double? {
-        let lowered = output.lowercased()
-        guard lowered.contains("temp") || lowered.contains("cpu") || lowered.contains("c") else {
-            return nil
-        }
-
-        return output
-            .split(whereSeparator: { !$0.isNumber && $0 != "." })
-            .compactMap { Double($0) }
-            .first
     }
 
     private static func clampPercent(_ value: Double) -> Double {
