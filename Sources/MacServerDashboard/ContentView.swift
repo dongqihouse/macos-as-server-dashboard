@@ -172,6 +172,7 @@ private extension NSView {
 
 private struct HeaderView: View {
     @ObservedObject var store: DashboardStore
+    private let toolButtonSize: CGFloat = 24
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -188,6 +189,7 @@ private struct HeaderView: View {
                     Task { await store.refresh() }
                 } label: {
                     Image(systemName: "arrow.clockwise")
+                        .frame(width: toolButtonSize, height: toolButtonSize)
                 }
                 .buttonStyle(.borderless)
                 .help("刷新状态")
@@ -232,8 +234,11 @@ private struct HeaderView: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle")
+                        .frame(width: toolButtonSize, height: toolButtonSize)
                 }
                 .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
                 .help("更多操作")
             }
 
