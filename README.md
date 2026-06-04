@@ -34,16 +34,18 @@ swift run MacServerDashboard
 ## 构建 Release
 
 ```bash
-scripts/package-release.sh v0.1.2
+scripts/package-release.sh v0.1.3
 ```
 
 生成的安装包在：
 
 ```text
-dist/MacServerDashboard-v0.1.2-macos-<arch>.dmg
+dist/MacServerDashboard-v0.1.3-macos-<arch>.dmg
 ```
 
 打开 DMG 后，将 `MacServerDashboard.app` 拖到 `Applications`。
+
+当前发布包会做 ad-hoc codesign，避免 macOS 将 app bundle 识别为损坏。若需要完全消除 Gatekeeper 提示，需要使用 Apple Developer ID 证书签名并 notarize。
 
 ## 发布 GitHub Release
 
