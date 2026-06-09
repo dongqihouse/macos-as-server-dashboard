@@ -8,7 +8,7 @@ struct CommandResult: Sendable {
 enum CommandRunner {
     static let defaultPath = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
-    static func run(_ command: String, timeout: TimeInterval = 4) async -> CommandResult {
+    static func run(_ command: String, timeout: TimeInterval = 4, logsFailures: Bool = true) async -> CommandResult {
         await withCheckedContinuation { continuation in
             let process = Process()
             let pipe = Pipe()
@@ -53,7 +53,7 @@ enum CommandRunner {
                 outputHandle.readabilityHandler = nil
                 let data = outputBuffer.snapshot()
                 let output = String(data: data, encoding: .utf8) ?? ""
-                if process.terminationStatus != 0 {
+                if logsFailures && process.terminationStatus != 0 {
                     AppLogger.error("Command failed exit=\(process.terminationStatus): \(command)\n\(truncated(output))")
                 }
                 continuation.resume(returning: CommandResult(exitCode: process.terminationStatus, output: output))
@@ -204,6 +204,9 @@ enum CommandRunner {
             "\(home)/.rye/shims",
             "\(home)/.pixi/bin",
             "\(home)/.poetry/bin",
+            "\(home)/.docker/bin",
+            "\(home)/.rd/bin",
+            "\(home)/.orbstack/bin",
             "\(home)/.bun/bin",
             "\(home)/.local/bin",
             "\(home)/.cargo/bin",
