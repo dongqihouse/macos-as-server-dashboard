@@ -150,6 +150,15 @@ enum UpdateManager {
     }
 
     private static func latestRelease() async throws -> GitHubRelease {
+        do {
+            return try await latestAPIRelease()
+        } catch {
+            AppLogger.error("GitHub Releases API update check failed, falling back to releases/latest: \(error.localizedDescription)")
+            return try await latestWebRelease()
+        }
+    }
+
+    private static func latestAPIRelease() async throws -> GitHubRelease {
         let url = URL(string: "https://api.github.com/repos/\(repository)/releases/latest")!
         var request = URLRequest(url: url)
         request.setValue("MacServerDashboard/\(AppVersion.current)", forHTTPHeaderField: "User-Agent")
@@ -158,10 +167,79 @@ enum UpdateManager {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse,
               200..<300 ~= httpResponse.statusCode else {
-            throw UpdateError.networkFailed(AppText.t("GitHub Releases API request failed.", zh: "GitHub Releases API 请求失败。"))
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+            let detail = githubErrorMessage(from: data) ?? HTTPURLResponse.localizedString(forStatusCode: statusCode)
+            throw UpdateError.networkFailed(AppText.t("GitHub Releases API request failed (HTTP \(statusCode)): \(detail)", zh: "GitHub Releases API 请求失败（HTTP \(statusCode)）：\(detail)"))
         }
 
         return try JSONDecoder().decode(GitHubRelease.self, from: data)
+    }
+
+    private static func latestWebRelease() async throws -> GitHubRelease {
+        let latestURL = URL(string: "https://github.com/\(repository)/releases/latest")!
+        var request = URLRequest(url: latestURL)
+        request.setValue("MacServerDashboard/\(AppVersion.current)", forHTTPHeaderField: "User-Agent")
+        request.setValue("text/html", forHTTPHeaderField: "Accept")
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              200..<300 ~= httpResponse.statusCode else {
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+            throw UpdateError.networkFailed(AppText.t("GitHub releases page request failed (HTTP \(statusCode)).", zh: "GitHub releases 页面请求失败（HTTP \(statusCode)）。"))
+        }
+
+        guard let finalURL = httpResponse.url,
+              let tagName = releaseTagName(from: finalURL) else {
+            throw UpdateError.networkFailed(AppText.t("Could not determine latest release tag from GitHub releases page.", zh: "无法从 GitHub releases 页面确定最新版本 tag。"))
+        }
+
+        let arch = currentArchitecture()
+        let archiveName = "MacServerDashboard-\(tagName)-macos-\(arch).dmg"
+        let checksumName = "MacServerDashboard-\(tagName)-checksums.txt"
+        return GitHubRelease(
+            tagName: tagName,
+            htmlURL: releasePageURL(tagName: tagName),
+            draft: false,
+            prerelease: false,
+            assets: [
+                GitHubReleaseAsset(name: archiveName, browserDownloadURL: releaseAssetURL(tagName: tagName, fileName: archiveName)),
+                GitHubReleaseAsset(name: checksumName, browserDownloadURL: releaseAssetURL(tagName: tagName, fileName: checksumName))
+            ]
+        )
+    }
+
+    private static func releaseTagName(from url: URL) -> String? {
+        let components = url.pathComponents
+        guard let tagIndex = components.firstIndex(of: "tag") else {
+            return nil
+        }
+
+        let nextIndex = components.index(after: tagIndex)
+        guard nextIndex < components.endIndex else {
+            return nil
+        }
+
+        let tagName = components[nextIndex]
+        return tagName.isEmpty ? nil : tagName
+    }
+
+    private static func releasePageURL(tagName: String) -> URL {
+        URL(string: "https://github.com/\(repository)/releases/tag/\(tagName)")!
+    }
+
+    private static func releaseAssetURL(tagName: String, fileName: String) -> URL {
+        URL(string: "https://github.com/\(repository)/releases/download/\(tagName)/\(fileName)")!
+    }
+
+    private static func githubErrorMessage(from data: Data) -> String? {
+        guard let object = try? JSONSerialization.jsonObject(with: data),
+              let dictionary = object as? [String: Any],
+              let message = dictionary["message"] as? String,
+              !message.isEmpty else {
+            return nil
+        }
+
+        return message
     }
 
     private static func download(
