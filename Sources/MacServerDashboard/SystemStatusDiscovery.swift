@@ -5,17 +5,21 @@ enum SystemStatusDiscovery {
     static func snapshot() async -> SystemStatusSnapshot {
         async let cpuUsage = cpuUsagePercent()
         async let memory = memoryUsage()
-        async let network = networkReachable()
+        async let networkReachability = networkReachable()
+        async let networkTraffic = NetworkTrafficSampler.shared.currentRate()
         let storage = storageUsage()
 
         let memoryUsage = await memory
+        let traffic = await networkTraffic
         return SystemStatusSnapshot(
             storageUsedBytes: storage?.used,
             storageTotalBytes: storage?.total,
             memoryUsedBytes: memoryUsage?.used,
             memoryTotalBytes: memoryUsage?.total,
             cpuUsagePercent: await cpuUsage,
-            networkReachable: await network
+            networkReachable: await networkReachability,
+            networkDownloadBytesPerSecond: traffic?.downloadBytesPerSecond,
+            networkUploadBytesPerSecond: traffic?.uploadBytesPerSecond
         )
     }
 
@@ -155,4 +159,103 @@ enum SystemStatusDiscovery {
             user + system + idle + nice
         }
     }
+}
+
+private actor NetworkTrafficSampler {
+    static let shared = NetworkTrafficSampler()
+
+    private var previousCounters: NetworkTrafficCounters?
+
+    func currentRate() -> NetworkTrafficRate? {
+        guard let currentCounters = Self.trafficCounters() else {
+            return nil
+        }
+
+        defer {
+            previousCounters = currentCounters
+        }
+
+        guard let previousCounters else {
+            return NetworkTrafficRate(downloadBytesPerSecond: nil, uploadBytesPerSecond: nil)
+        }
+
+        let elapsedSeconds = currentCounters.timestamp.timeIntervalSince(previousCounters.timestamp)
+        guard elapsedSeconds > 0 else {
+            return NetworkTrafficRate(downloadBytesPerSecond: nil, uploadBytesPerSecond: nil)
+        }
+
+        let downloadDelta = Self.byteDelta(currentCounters.downloadBytes, previousCounters.downloadBytes)
+        let uploadDelta = Self.byteDelta(currentCounters.uploadBytes, previousCounters.uploadBytes)
+        return NetworkTrafficRate(
+            downloadBytesPerSecond: Double(downloadDelta) / elapsedSeconds,
+            uploadBytesPerSecond: Double(uploadDelta) / elapsedSeconds
+        )
+    }
+
+    private nonisolated static func trafficCounters() -> NetworkTrafficCounters? {
+        var interfaces: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&interfaces) == 0, let firstInterface = interfaces else {
+            AppLogger.error("Network traffic discovery failed: getifaddrs unavailable")
+            return nil
+        }
+        defer {
+            freeifaddrs(firstInterface)
+        }
+
+        var downloadBytes: UInt64 = 0
+        var uploadBytes: UInt64 = 0
+        var foundInterface = false
+        var cursor: UnsafeMutablePointer<ifaddrs>? = firstInterface
+
+        while let interface = cursor {
+            cursor = interface.pointee.ifa_next
+
+            guard let address = interface.pointee.ifa_addr,
+                  Int32(address.pointee.sa_family) == AF_LINK,
+                  isUsableInterface(flags: interface.pointee.ifa_flags),
+                  let data = interface.pointee.ifa_data else {
+                continue
+            }
+
+            let networkData = data.assumingMemoryBound(to: if_data.self).pointee
+            downloadBytes += UInt64(networkData.ifi_ibytes)
+            uploadBytes += UInt64(networkData.ifi_obytes)
+            foundInterface = true
+        }
+
+        guard foundInterface else {
+            AppLogger.info("Network traffic discovery unavailable: no active interface counters")
+            return nil
+        }
+
+        return NetworkTrafficCounters(
+            downloadBytes: downloadBytes,
+            uploadBytes: uploadBytes,
+            timestamp: Date()
+        )
+    }
+
+    private nonisolated static func isUsableInterface(flags: UInt32) -> Bool {
+        (flags & UInt32(IFF_UP)) != 0 &&
+            (flags & UInt32(IFF_RUNNING)) != 0 &&
+            (flags & UInt32(IFF_LOOPBACK)) == 0
+    }
+
+    private nonisolated static func byteDelta(_ current: UInt64, _ previous: UInt64) -> UInt64 {
+        guard current >= previous else {
+            return 0
+        }
+        return current - previous
+    }
+}
+
+private struct NetworkTrafficCounters: Sendable {
+    var downloadBytes: UInt64
+    var uploadBytes: UInt64
+    var timestamp: Date
+}
+
+private struct NetworkTrafficRate: Sendable {
+    var downloadBytesPerSecond: Double?
+    var uploadBytesPerSecond: Double?
 }

@@ -9,7 +9,7 @@ A lightweight dashboard that can sit on the macOS desktop and show local service
 ## Features
 
 - Desktop pinning: keeps the window at desktop level and visible across Spaces.
-- System status: shows storage usage, CPU usage, memory usage, and network connectivity.
+- System status: shows storage usage, CPU usage, memory usage, network connectivity, and upload/download speed.
 - Service grouping: separates local services from Docker containers.
 - Port checks: uses `nc` to test whether TCP ports are reachable.
 - Port notes: stores per-port notes in the config file.

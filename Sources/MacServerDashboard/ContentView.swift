@@ -306,8 +306,11 @@ private struct SystemStatusView: View {
                 )
                 SystemMetricTile(
                     title: AppText.t("Network", zh: "网络"),
-                    value: networkValue(status.networkReachable),
-                    detail: networkDetail(status.networkReachable),
+                    value: networkDownloadValue(status.networkDownloadBytesPerSecond),
+                    detail: networkDetail(
+                        reachable: status.networkReachable,
+                        uploadBytesPerSecond: status.networkUploadBytesPerSecond
+                    ),
                     symbolName: "network"
                 )
             }
@@ -336,18 +339,22 @@ private struct SystemStatusView: View {
         return formatPercent(value)
     }
 
-    private func networkValue(_ value: Bool?) -> String {
-        guard let value else {
-            return AppText.t("Unavailable", zh: "不可用")
-        }
-        return value ? AppText.t("Reachable", zh: "可连接") : AppText.t("Unreachable", zh: "不可连接")
+    private func networkDownloadValue(_ bytesPerSecond: Double?) -> String {
+        AppText.t("Down \(formatBytesPerSecond(bytesPerSecond))", zh: "下行 \(formatBytesPerSecond(bytesPerSecond))")
     }
 
-    private func networkDetail(_ value: Bool?) -> String {
-        guard value != nil else {
+    private func networkDetail(reachable: Bool?, uploadBytesPerSecond: Double?) -> String {
+        AppText.t(
+            "Up \(formatBytesPerSecond(uploadBytesPerSecond)) · \(networkReachabilityLabel(reachable))",
+            zh: "上行 \(formatBytesPerSecond(uploadBytesPerSecond)) · \(networkReachabilityLabel(reachable))"
+        )
+    }
+
+    private func networkReachabilityLabel(_ value: Bool?) -> String {
+        guard let value else {
             return AppText.t("Probe unavailable", zh: "探测不可用")
         }
-        return AppText.t("Internet connectivity", zh: "外网连通性")
+        return value ? AppText.t("Reachable", zh: "可连接") : AppText.t("Unreachable", zh: "不可连接")
     }
 
     private func formatPercent(_ value: Double) -> String {
@@ -370,6 +377,15 @@ private struct SystemStatusView: View {
             return String(format: "%.0f %@", value, units[unitIndex])
         }
         return String(format: "%.1f %@", value, units[unitIndex])
+    }
+
+    private func formatBytesPerSecond(_ bytesPerSecond: Double?) -> String {
+        guard let bytesPerSecond, bytesPerSecond.isFinite else {
+            return "--"
+        }
+
+        let clampedBytes = min(max(bytesPerSecond, 0), Double(UInt64.max))
+        return "\(formatBytes(UInt64(clampedBytes)))/s"
     }
 }
 
@@ -412,6 +428,9 @@ private struct ServiceGroupView: View {
     var services: [ServiceSnapshot]
     @ObservedObject var store: DashboardStore
     @State private var showingLocalServiceEditor = false
+    private let columns = [
+        GridItem(.adaptive(minimum: 220), spacing: 8, alignment: .top)
+    ]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -438,7 +457,7 @@ private struct ServiceGroupView: View {
             if services.isEmpty {
                 EmptyGroupHint(title: kind.displayName)
             } else {
-                VStack(spacing: 8) {
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
                     ForEach(services) { service in
                         ServiceRow(service: service, store: store)
                     }
@@ -483,6 +502,7 @@ private struct ServiceRow: View {
             }
         }
         .padding(10)
+        .frame(maxWidth: .infinity, minHeight: 72, alignment: .topLeading)
         .background(.thinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .confirmationDialog(AppText.t("Delete local service?", zh: "删除本机服务？"), isPresented: $showingDeleteConfirmation) {
@@ -522,22 +542,24 @@ private struct ServiceRow: View {
     }
 
     private var localServiceBody: some View {
-        HStack(alignment: .center, spacing: 10) {
-            Image(systemName: service.state.symbolName)
-                .foregroundStyle(service.state.tint)
-                .frame(width: 18)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(localServiceTitle)
-                    .font(.callout)
-                    .fontWeight(.medium)
-                    .lineLimit(1)
-                Text(service.state.displayName)
-                    .font(.caption)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: service.state.symbolName)
                     .foregroundStyle(service.state.tint)
-            }
+                    .frame(width: 18)
 
-            Spacer()
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(localServiceTitle)
+                        .font(.callout)
+                        .fontWeight(.medium)
+                        .lineLimit(1)
+                    Text(service.state.displayName)
+                        .font(.caption)
+                        .foregroundStyle(service.state.tint)
+                }
+
+                Spacer(minLength: 0)
+            }
 
             localServiceActions
         }
@@ -608,6 +630,7 @@ private struct ServiceRow: View {
             .buttonStyle(.borderless)
             .help(AppText.t("View logs", zh: "查看日志"))
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var localServiceTitle: String {

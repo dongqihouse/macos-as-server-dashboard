@@ -244,6 +244,8 @@ struct SystemStatusSnapshot: Hashable, Sendable {
     var memoryTotalBytes: UInt64?
     var cpuUsagePercent: Double?
     var networkReachable: Bool?
+    var networkDownloadBytesPerSecond: Double?
+    var networkUploadBytesPerSecond: Double?
 
     static let placeholder = SystemStatusSnapshot(
         storageUsedBytes: nil,
@@ -251,7 +253,9 @@ struct SystemStatusSnapshot: Hashable, Sendable {
         memoryUsedBytes: nil,
         memoryTotalBytes: nil,
         cpuUsagePercent: nil,
-        networkReachable: nil
+        networkReachable: nil,
+        networkDownloadBytesPerSecond: nil,
+        networkUploadBytesPerSecond: nil
     )
 }
 
